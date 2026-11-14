@@ -156,8 +156,8 @@ export function createAcousticWallTexture(env: EnvironmentProfile): THREE.Canvas
       ctx.stroke();
     }
   } else {
-    // Perforated & woven acoustic theater fabric
-    ctx.strokeStyle = 'rgba(255,255,255,0.045)';
+    // Perforated & woven acoustic theater fabric with recessed panel seams
+    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
     ctx.lineWidth = 1;
     for (let y = 0; y < 512; y += 6) {
       ctx.beginPath();
@@ -166,8 +166,14 @@ export function createAcousticWallTexture(env: EnvironmentProfile): THREE.Canvas
       ctx.stroke();
     }
     for (let x = 0; x < 512; x += 64) {
-      ctx.fillStyle = 'rgba(0,0,0,0.38)';
+      ctx.fillStyle = 'rgba(0,0,0,0.44)';
       ctx.fillRect(x, 0, 4, 512);
+      ctx.fillStyle = 'rgba(255,255,255,0.035)';
+      ctx.fillRect(x + 4, 0, 2, 512);
+    }
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    for (let y = 0; y < 512; y += 128) {
+      ctx.fillRect(0, y, 512, 3);
     }
   }
 
@@ -350,53 +356,187 @@ export function createExitSignTexture(): THREE.CanvasTexture {
   return tex;
 }
 
+function drawTrackedText(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  centerX: number,
+  centerY: number,
+  trackingPx: number,
+): number {
+  const chars = Array.from(text);
+  const widths = chars.map((ch) => ctx.measureText(ch).width);
+  const totalWidth =
+    widths.reduce((acc, w) => acc + w, 0) + Math.max(0, chars.length - 1) * trackingPx;
+  let cursorX = centerX - totalWidth / 2;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  chars.forEach((ch, idx) => {
+    ctx.fillText(ch, cursorX, centerY);
+    cursorX += widths[idx] + trackingPx;
+  });
+  return totalWidth;
+}
+
 export function createStandbyScreenTexture(_theaterName: string): THREE.CanvasTexture {
+  const W = 2048;
+  const H = 1024;
+  const cx = W / 2;
+  const cy = H / 2;
+
   const canvas = document.createElement('canvas');
-  canvas.width = 1280;
-  canvas.height = 640;
+  canvas.width = W;
+  canvas.height = H;
   const ctx = canvas.getContext('2d')!;
 
-  const grad = ctx.createRadialGradient(640, 320, 40, 640, 320, 680);
-  grad.addColorStop(0, '#221d15');
-  grad.addColorStop(0.5, '#0e0e13');
-  grad.addColorStop(1, '#040406');
-  ctx.fillStyle = grad;
-  ctx.fillRect(0, 0, 1280, 640);
+  // Deep obsidian-cinema radial stage vignette with warm golden atmospheric center bloom
+  const bgGrad = ctx.createRadialGradient(cx, cy - 10, 30, cx, cy, 1080);
+  bgGrad.addColorStop(0, '#2a2013');
+  bgGrad.addColorStop(0.28, '#141114');
+  bgGrad.addColorStop(0.62, '#090a0e');
+  bgGrad.addColorStop(1, '#020204');
+  ctx.fillStyle = bgGrad;
+  ctx.fillRect(0, 0, W, H);
 
-  // Subtle theatrical proscenium double border
+  // Subtle horizontal anamorphic spotlight flare behind GSR centerpiece
+  const flareGrad = ctx.createRadialGradient(cx, cy - 12, 8, cx, cy - 12, 460);
+  flareGrad.addColorStop(0, 'rgba(245, 200, 92, 0.22)');
+  flareGrad.addColorStop(0.45, 'rgba(212, 175, 55, 0.08)');
+  flareGrad.addColorStop(1, 'rgba(212, 175, 55, 0)');
+  ctx.fillStyle = flareGrad;
+  ctx.fillRect(cx - 500, cy - 280, 1000, 560);
+
+  const streakGrad = ctx.createLinearGradient(cx - 520, cy - 12, cx + 520, cy - 12);
+  streakGrad.addColorStop(0, 'rgba(255, 224, 140, 0)');
+  streakGrad.addColorStop(0.32, 'rgba(245, 205, 110, 0.09)');
+  streakGrad.addColorStop(0.5, 'rgba(255, 240, 190, 0.24)');
+  streakGrad.addColorStop(0.68, 'rgba(245, 205, 110, 0.09)');
+  streakGrad.addColorStop(1, 'rgba(255, 224, 140, 0)');
+  ctx.fillStyle = streakGrad;
+  ctx.fillRect(cx - 520, cy - 16, 1040, 8);
+
+  // Theatrical gold double proscenium border
   ctx.strokeStyle = 'rgba(212, 175, 55, 0.42)';
-  ctx.lineWidth = 2;
-  ctx.strokeRect(48, 48, 1184, 544);
+  ctx.lineWidth = 3;
+  ctx.strokeRect(72, 72, W - 144, H - 144);
   ctx.strokeStyle = 'rgba(212, 175, 55, 0.16)';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(60, 60, 1160, 520);
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(92, 92, W - 184, H - 184);
 
-  const standbyText = 'Tin factory GSR ra neeee akkkkkkkkkaaaaa';
-  const words = standbyText.split(' ');
-  const splitIdx = Math.ceil(words.length / 2);
-  const line1 = words.slice(0, splitIdx).join(' ');
-  const line2 = words.slice(splitIdx).join(' ');
+  // Safe horizontal span ~900px centered so mobile portrait & desktop widescreen both see 100% of text
+  const safeMaxWidth = 880;
 
-  let fontSize = 42;
-  const maxWidth = 660;
-  while (fontSize > 22) {
-    ctx.font = `600 ${fontSize}px Georgia, serif`;
-    if (
-      ctx.measureText(line1).width <= maxWidth &&
-      ctx.measureText(line2).width <= maxWidth
-    ) {
-      break;
-    }
-    fontSize -= 2;
+  // 1. Top Line: "Tin factory" in refined tracked display serif
+  const eyebrowText = 'Tin factory';
+  ctx.font = '600 50px "Cormorant Garamond", Georgia, serif';
+  ctx.fillStyle = '#E6DEC8';
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.85)';
+  ctx.shadowBlur = 12;
+  const eyebrowW = drawTrackedText(ctx, eyebrowText, cx, cy - 155, 11);
+  ctx.shadowBlur = 0;
+
+  // Subtle flanking hairlines beside "Tin factory"
+  const ruleSpan = 108;
+  const gapFromText = 28;
+  const leftRuleEnd = cx - eyebrowW / 2 - gapFromText;
+  const rightRuleStart = cx + eyebrowW / 2 + gapFromText;
+  const leftRuleGrad = ctx.createLinearGradient(leftRuleEnd - ruleSpan, cy - 155, leftRuleEnd, cy - 155);
+  leftRuleGrad.addColorStop(0, 'rgba(212, 175, 55, 0)');
+  leftRuleGrad.addColorStop(1, 'rgba(212, 175, 55, 0.65)');
+  ctx.strokeStyle = leftRuleGrad;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(leftRuleEnd - ruleSpan, cy - 155);
+  ctx.lineTo(leftRuleEnd, cy - 155);
+  ctx.stroke();
+
+  const rightRuleGrad = ctx.createLinearGradient(rightRuleStart, cy - 155, rightRuleStart + ruleSpan, cy - 155);
+  rightRuleGrad.addColorStop(0, 'rgba(212, 175, 55, 0.65)');
+  rightRuleGrad.addColorStop(1, 'rgba(212, 175, 55, 0)');
+  ctx.strokeStyle = rightRuleGrad;
+  ctx.beginPath();
+  ctx.moveTo(rightRuleStart, cy - 155);
+  ctx.lineTo(rightRuleStart + ruleSpan, cy - 155);
+  ctx.stroke();
+
+  // 2. Hero Centerpiece Highlight: "GSR" in monumental brushed metallic gold
+  const heroText = 'GSR';
+  ctx.font = '700 184px "Cormorant Garamond", Georgia, serif';
+  const heroTracking = 28;
+
+  // Deep shadow underlayer
+  ctx.fillStyle = 'rgba(0, 0, 0, 0.9)';
+  ctx.shadowColor = 'rgba(245, 196, 81, 0.52)';
+  ctx.shadowBlur = 34;
+  ctx.shadowOffsetY = 6;
+  drawTrackedText(ctx, heroText, cx, cy - 14, heroTracking);
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetY = 0;
+
+  // Multi-stop vertical metallic gold gradient fill
+  const goldGrad = ctx.createLinearGradient(0, cy - 102, 0, cy + 72);
+  goldGrad.addColorStop(0, '#FFF8DF');
+  goldGrad.addColorStop(0.28, '#F6D26C');
+  goldGrad.addColorStop(0.54, '#D4AF37');
+  goldGrad.addColorStop(0.78, '#9E731A');
+  goldGrad.addColorStop(1, '#F8DB82');
+  ctx.fillStyle = goldGrad;
+  drawTrackedText(ctx, heroText, cx, cy - 14, heroTracking);
+
+  // Subtle bright rim stroke around GSR glyphs
+  ctx.strokeStyle = 'rgba(255, 244, 200, 0.48)';
+  ctx.lineWidth = 2;
+  const gsrChars = Array.from(heroText);
+  const gsrWidths = gsrChars.map((ch) => ctx.measureText(ch).width);
+  const gsrTotalW =
+    gsrWidths.reduce((a, b) => a + b, 0) + (gsrChars.length - 1) * heroTracking;
+  let gx = cx - gsrTotalW / 2;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  gsrChars.forEach((ch, idx) => {
+    ctx.strokeText(ch, gx, cy - 14);
+    gx += gsrWidths[idx] + heroTracking;
+  });
+
+  // 3. Ornamental tapered gold divider + central diamond below GSR
+  const divY = cy + 102;
+  const divGrad = ctx.createLinearGradient(cx - 320, divY, cx + 320, divY);
+  divGrad.addColorStop(0, 'rgba(212, 175, 55, 0)');
+  divGrad.addColorStop(0.35, 'rgba(212, 175, 55, 0.55)');
+  divGrad.addColorStop(0.5, 'rgba(255, 236, 170, 0.92)');
+  divGrad.addColorStop(0.65, 'rgba(212, 175, 55, 0.55)');
+  divGrad.addColorStop(1, 'rgba(212, 175, 55, 0)');
+  ctx.strokeStyle = divGrad;
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(cx - 320, divY);
+  ctx.lineTo(cx + 320, divY);
+  ctx.stroke();
+
+  ctx.save();
+  ctx.translate(cx, divY);
+  ctx.rotate(Math.PI / 4);
+  ctx.fillStyle = '#F7D97E';
+  ctx.fillRect(-5.5, -5.5, 11, 11);
+  ctx.restore();
+
+  // 4. Bottom Subtitle: "ra neeee akkkkkkkkkaaaaa" auto-fitted inside central 880px safe zone
+  const subText = 'ra neeee akkkkkkkkkaaaaa';
+  let subSize = 48;
+  const subTracking = 5;
+  while (subSize > 26) {
+    ctx.font = `italic 500 ${subSize}px "Cormorant Garamond", Georgia, serif`;
+    const subChars = Array.from(subText);
+    const estW =
+      subChars.reduce((acc, ch) => acc + ctx.measureText(ch).width, 0) +
+      (subChars.length - 1) * subTracking;
+    if (estW <= safeMaxWidth) break;
+    subSize -= 2;
   }
 
-  ctx.fillStyle = '#f4f1ea';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.shadowColor = 'rgba(212, 175, 55, 0.28)';
+  ctx.fillStyle = '#EFE9DC';
+  ctx.shadowColor = 'rgba(212, 175, 55, 0.25)';
   ctx.shadowBlur = 14;
-  ctx.fillText(line1, 640, 292);
-  ctx.fillText(line2, 640, 350);
+  drawTrackedText(ctx, subText, cx, cy + 168, subTracking);
   ctx.shadowBlur = 0;
 
   const tex = new THREE.CanvasTexture(canvas);

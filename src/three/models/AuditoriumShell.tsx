@@ -311,8 +311,8 @@ export const AuditoriumShell: React.FC<AuditoriumShellProps> = ({
   const rowBadgeOpacity = 0.65 + lightFactor * 0.35;
   const wallAccentIntensity = lightFactor * 1.55;
   const ceilingPuckIntensity = lightFactor * 2.2;
-  const boothWorkLightIntensity = 0.08 + lightFactor * 0.55;
-  const lensEmissiveIntensity = lightFactor < 0.25 ? 1.85 : 0.75;
+  const boothWorkLightIntensity = 0.06 + lightFactor * 0.52;
+  const lensEmissiveIntensity = lightFactor < 0.25 ? 0.58 : 0.28;
 
   const frontZ = -L / 2;
   const backZ = L / 2;
@@ -447,6 +447,21 @@ export const AuditoriumShell: React.FC<AuditoriumShellProps> = ({
                   />
                 </mesh>
               )}
+
+              {/* Compact brushed metal aisle safety handrail posts on upper steep tiers */}
+              {rowElevationStep >= 0.4 && tier.row >= 2 && tier.row % 2 === 0 && (
+                <group position={[ax + (ax >= 0 ? 0.52 : -0.52), tier.y, tier.z - tier.depth / 2 + 0.14]}>
+                  <mesh position={[0, 0.38, 0]} material={materials.trimMetalMat}>
+                    <cylinderGeometry args={[0.02, 0.022, 0.76, 10]} />
+                  </mesh>
+                  <mesh position={[0, 0.015, 0]} material={materials.nosingMat}>
+                    <cylinderGeometry args={[0.048, 0.052, 0.03, 12]} />
+                  </mesh>
+                  <mesh position={[0, 0.76, rowSpacing * 0.48]} rotation={[Math.atan2(rowElevationStep, rowSpacing), 0, 0]} material={materials.trimMetalMat}>
+                    <boxGeometry args={[0.036, 0.028, Math.hypot(rowSpacing, rowElevationStep) * 1.02]} />
+                  </mesh>
+                </group>
+              )}
             </React.Fragment>
           ))}
         </group>
@@ -538,7 +553,39 @@ export const AuditoriumShell: React.FC<AuditoriumShellProps> = ({
         <boxGeometry args={[sideBackWallW, actualWinH, 0.4]} />
       </mesh>
 
-      {/* Rear Cinema Entrance Double Doors + Overhead Illuminated Sign + Framed Poster Lightbox */}
+      {/* Architectural Floor Skirting & Ceiling Crown Cornice Moldings */}
+      {[-1, 1].map((side) => (
+        <group key={`wall-molding-${side}`}>
+          <mesh position={[side * (W / 2 - 0.22), 0.12, 0]} material={materials.nosingMat}>
+            <boxGeometry args={[0.06, 0.24, L]} />
+          </mesh>
+          <mesh position={[side * (W / 2 - 0.24), H - 0.22, 0]} material={materials.trimMetalMat}>
+            <boxGeometry args={[0.14, 0.12, L]} />
+          </mesh>
+        </group>
+      ))}
+      <mesh position={[0, H - 0.22, backZ - 0.22]} material={materials.trimMetalMat}>
+        <boxGeometry args={[W - 0.4, 0.12, 0.14]} />
+      </mesh>
+
+      {/* Symmetrical Vertical Acoustic Diffuser Slats on Rear Wall Flanking Booth & Doors */}
+      {[-1, 1].map((side) =>
+        Array.from({ length: 4 }, (_, si) => {
+          const slatX = side * (boothWinW / 2 + 1.55 + si * 0.42);
+          if (Math.abs(slatX) > W / 2 - 0.55) return null;
+          return (
+            <mesh
+              key={`rear-diffuser-${side}-${si}`}
+              position={[slatX, H * 0.52, backZ - 0.22]}
+              material={materials.acousticPanelMat}
+            >
+              <boxGeometry args={[0.12, H * 0.72, 0.07]} />
+            </mesh>
+          );
+        }),
+      )}
+
+      {/* Rear Cinema Entrance Double Doors + Overhead Illuminated Sign + Symmetrical Framed Poster Lightboxes */}
       <group position={[0, Math.min(winBot - 1.35, topTierY + 1.15), backZ - 0.24]}>
         <mesh material={materials.trimMetalMat}>
           <boxGeometry args={[2.5, 2.45, 0.14]} />
@@ -558,14 +605,16 @@ export const AuditoriumShell: React.FC<AuditoriumShellProps> = ({
         <mesh position={[0, 1.44, 0.05]} material={materials.entranceSignMat}>
           <planeGeometry args={[1.15, 0.3]} />
         </mesh>
-        <group position={[Math.min(2.15, W * 0.22), 0.12, 0.04]}>
-          <mesh material={materials.trimMetalMat}>
-            <boxGeometry args={[0.96, 1.36, 0.06]} />
-          </mesh>
-          <mesh position={[0, 0, 0.04]} material={materials.posterMat}>
-            <planeGeometry args={[0.84, 1.22]} />
-          </mesh>
-        </group>
+        {[-1, 1].map((pside) => (
+          <group key={`rear-poster-${pside}`} position={[pside * Math.min(2.25, W * 0.22), 0.12, 0.04]}>
+            <mesh material={materials.trimMetalMat}>
+              <boxGeometry args={[0.96, 1.36, 0.06]} />
+            </mesh>
+            <mesh position={[0, 0, 0.04]} material={materials.posterMat}>
+              <planeGeometry args={[0.84, 1.22]} />
+            </mesh>
+          </group>
+        ))}
       </group>
 
       {/* ===================================================================== */}
@@ -758,10 +807,19 @@ export const AuditoriumShell: React.FC<AuditoriumShellProps> = ({
         </group>
       </group>
 
-      {/* Ceiling Slab */}
+      {/* Ceiling Slab + Recessed Acoustic Baffle Strips & HVAC Return Louvers */}
       <mesh position={[0, H, 0]} receiveShadow material={materials.ceilingMat}>
         <boxGeometry args={[W, 0.4, L]} />
       </mesh>
+      {[-0.22, 0.22].map((lzFactor, li) => (
+        <mesh
+          key={`hvac-vent-${li}`}
+          position={[0, H - 0.205, L * lzFactor]}
+          material={materials.speakerMat}
+        >
+          <boxGeometry args={[Math.min(2.6, W * 0.18), 0.03, 0.9]} />
+        </mesh>
+      ))}
 
       {/* Real Multi-Part 3D Cinema Speakers (Side/Rear Surrounds, Overhead Atmos Pods & Front Line-Array Subwoofers) */}
       <CinemaSpeakers

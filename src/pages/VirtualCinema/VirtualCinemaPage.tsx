@@ -115,6 +115,8 @@ export const VirtualCinemaPage: React.FC = () => {
   }, []);
 
   const silenceStreakRef = useRef(0);
+  const lastProgressedTimeRef = useRef(-1);
+  const frozenTicksRef = useRef(0);
 
   const createDeckElement = useCallback((host: HTMLElement) => {
     const vid = document.createElement('video');
@@ -127,11 +129,12 @@ export const VirtualCinemaPage: React.FC = () => {
       ? 0
       : audioSettingsRef.current.masterVolume * audioSettingsRef.current.videoVolume;
     vid.disableRemotePlayback = true;
-    vid.style.width = '32px';
-    vid.style.height = '18px';
+    vid.style.width = '128px';
+    vid.style.height = '72px';
     vid.style.position = 'absolute';
     vid.style.top = '0';
     vid.style.left = '0';
+    vid.style.transform = 'translateZ(0)';
     vid.style.pointerEvents = 'none';
     host.appendChild(vid);
     return vid;
@@ -686,10 +689,12 @@ export const VirtualCinemaPage: React.FC = () => {
     vid.addEventListener('ended', onEnded);
     vid.addEventListener('error', onError);
 
-    // Watchdog prevents unexpected browser media suspension, decoder stalls, or silent mobile hijack
+    // Watchdog prevents unexpected browser media suspension, fullscreen decoder stalls, or silent mobile hijack
     const watchdogId = window.setInterval(() => {
       if (showState !== 'SHOW_PLAYING' || isPausedRef.current || autoplayBlocked || vid.ended) {
         silenceStreakRef.current = 0;
+        frozenTicksRef.current = 0;
+        lastProgressedTimeRef.current = vid.currentTime;
         return;
       }
 
@@ -697,6 +702,30 @@ export const VirtualCinemaPage: React.FC = () => {
         cinemaAudioEngine.resume().catch(() => {});
         vid.play().catch(() => {});
         return;
+      }
+
+      // Detect active playback stall/freeze (e.g., Chromium fullscreen compositor stall) and kick decoder gently
+      const nowTime = vid.currentTime;
+      if (Math.abs(nowTime - lastProgressedTimeRef.current) < 0.004 && vid.readyState >= 2) {
+        frozenTicksRef.current += 1;
+        if (frozenTicksRef.current === 2) {
+          cinemaAudioEngine.resume().catch(() => {});
+          vid.play().catch(() => {});
+        } else if (frozenTicksRef.current >= 3) {
+          try {
+            const dur = Number.isFinite(vid.duration) ? vid.duration : 0;
+            if (dur === 0 || nowTime + 0.04 < dur) {
+              vid.currentTime = nowTime + 0.02;
+            }
+            vid.play().catch(() => {});
+          } catch {
+            // Ignore seek failure
+          }
+          frozenTicksRef.current = 0;
+        }
+      } else {
+        lastProgressedTimeRef.current = nowTime;
+        frozenTicksRef.current = 0;
       }
 
       const audioCfg = audioSettingsRef.current;
@@ -1038,11 +1067,11 @@ export const VirtualCinemaPage: React.FC = () => {
       onTouchStart={bumpHudActivity}
       className="relative h-screen w-screen overflow-hidden bg-[#040406] text-[#F4F1EA] select-none"
     >
-      {/* Hidden hardware-decode video host kept inside fullscreen container so Fullscreen never throttles playback */}
+      {/* Hardware-decode video host kept actively composited inside fullscreen container so Fullscreen never throttles playback */}
       <div
         ref={videoHostRef}
         aria-hidden="true"
-        className="pointer-events-none absolute bottom-0 left-0 z-[1] h-[18px] w-[32px] overflow-hidden opacity-[0.01]"
+        className="pointer-events-none absolute bottom-0 left-0 z-[1] h-[72px] w-[128px] overflow-hidden opacity-[0.008]"
       />
 
       {/* 3D Auditorium Canvas */}

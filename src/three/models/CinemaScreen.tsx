@@ -8,6 +8,7 @@ import {
 } from '../../types/cinema';
 import { createStandbyScreenTexture } from '../materials/proceduralTextures';
 import { ScreenBounceUniforms } from '../lighting/screenBounceShader';
+import { isMobileDevice } from '../../utils/formatters';
 
 export interface ScreenBounceSample {
   r: number;
@@ -219,8 +220,12 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
   const lastVideoTimeRef = useRef(-1);
   const lastActiveTexRef = useRef<THREE.Texture | null>(null);
   const lastUploadMsRef = useRef(0);
+  const lastSamplerMsRef = useRef(0);
+  const lastSamplerTexRef = useRef<THREE.Texture | null>(null);
   const uploadedDeckRef = useRef<{ A: boolean; B: boolean }>({ A: false, B: false });
+  const rVfcPendingRef = useRef<{ A: boolean; B: boolean }>({ A: false, B: false });
   const currentBounceGainRef = useRef(0);
+  const isMobile = useMemo(() => isMobileDevice(), []);
 
   const standbyTexture = useMemo(
     () => createStandbyScreenTexture(theaterName),
@@ -238,6 +243,9 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
     const invalidateUpload = () => {
       lastVideoTimeRef.current = -1;
       lastUploadMsRef.current = 0;
+      lastSamplerMsRef.current = 0;
+      rVfcPendingRef.current.A = true;
+      rVfcPendingRef.current.B = true;
     };
     document.addEventListener('fullscreenchange', invalidateUpload);
     window.addEventListener('resize', invalidateUpload);
@@ -349,7 +357,27 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
     tex.generateMipmaps = false;
     texARef.current = tex;
     uploadedDeckRef.current.A = false;
+
+    let cancelled = false;
+    let rVfcId = 0;
+    const vidWithRvfc = videoElementA as HTMLVideoElement & {
+      requestVideoFrameCallback?: (cb: () => void) => number;
+      cancelVideoFrameCallback?: (id: number) => void;
+    };
+    if (typeof vidWithRvfc.requestVideoFrameCallback === 'function') {
+      const onFrame = () => {
+        if (cancelled) return;
+        rVfcPendingRef.current.A = true;
+        rVfcId = vidWithRvfc.requestVideoFrameCallback!(onFrame);
+      };
+      rVfcId = vidWithRvfc.requestVideoFrameCallback(onFrame);
+    }
+
     return () => {
+      cancelled = true;
+      if (rVfcId && typeof vidWithRvfc.cancelVideoFrameCallback === 'function') {
+        vidWithRvfc.cancelVideoFrameCallback(rVfcId);
+      }
       uploadedDeckRef.current.A = false;
       tex.dispose();
       if (texARef.current === tex) texARef.current = null;
@@ -369,7 +397,27 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
     tex.generateMipmaps = false;
     texBRef.current = tex;
     uploadedDeckRef.current.B = false;
+
+    let cancelled = false;
+    let rVfcId = 0;
+    const vidWithRvfc = videoElementB as HTMLVideoElement & {
+      requestVideoFrameCallback?: (cb: () => void) => number;
+      cancelVideoFrameCallback?: (id: number) => void;
+    };
+    if (typeof vidWithRvfc.requestVideoFrameCallback === 'function') {
+      const onFrame = () => {
+        if (cancelled) return;
+        rVfcPendingRef.current.B = true;
+        rVfcId = vidWithRvfc.requestVideoFrameCallback!(onFrame);
+      };
+      rVfcId = vidWithRvfc.requestVideoFrameCallback(onFrame);
+    }
+
     return () => {
+      cancelled = true;
+      if (rVfcId && typeof vidWithRvfc.cancelVideoFrameCallback === 'function') {
+        vidWithRvfc.cancelVideoFrameCallback(rVfcId);
+      }
       uploadedDeckRef.current.B = false;
       tex.dispose();
       if (texBRef.current === tex) texBRef.current = null;
@@ -523,10 +571,10 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
 
           vec3 viewDir = normalize(vViewPos);
           float fresnel = pow(abs(dot(normalize(vNormal), viewDir)), ${edgePow.toFixed(2)});
-          // Strong concentrated light exiting projector lens, softly widening to meet the screen
-          float distFade = smoothstep(0.0, 0.06, vBeamT) * mix(1.0, 0.32, pow(vBeamT, 0.72));
-          float alpha = fresnel * distFade * uOpacity * (0.18 + min(lum * 1.45, 1.0));
-          gl_FragColor = vec4(beamCol * (1.1 + lum * 0.4), alpha);
+          // Delicate dusty atmospheric beam exiting projector lens, softly fading toward screen
+          float distFade = smoothstep(0.0, 0.14, vBeamT) * mix(0.68, 0.12, pow(vBeamT, 0.55));
+          float alpha = fresnel * distFade * uOpacity * (0.07 + min(lum * 0.65, 0.45));
+          gl_FragColor = vec4(beamCol * 0.85, alpha);
         }
       `,
       transparent: true,
@@ -536,14 +584,14 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
     });
 
   const outerBeamMaterial = useMemo(() => {
-    const mat = createBeamMaterial(1.35);
+    const mat = createBeamMaterial(1.55);
     outerBeamMatRef.current = mat;
     return mat;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gpuLightSampler]);
 
   const innerBeamMaterial = useMemo(() => {
-    const mat = createBeamMaterial(1.1);
+    const mat = createBeamMaterial(1.3);
     innerBeamMatRef.current = mat;
     return mat;
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -571,8 +619,8 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
           vec3 c2 = pow(max(texture2D(uScreenLightTex, vec2(0.65, 0.5)).rgb, vec3(1e-4)), vec3(2.2));
           vec3 col = (c1 + c2) * 0.5;
           float d = distance(vUv, vec2(0.5)) * 2.0;
-          float glow = pow(max(0.0, 1.0 - d), 2.4);
-          gl_FragColor = vec4(col * 1.6 + vec3(0.08, 0.1, 0.14), glow * uOpacity);
+          float glow = pow(max(0.0, 1.0 - d), 3.0);
+          gl_FragColor = vec4(col * 0.95, glow * uOpacity);
         }
       `,
       transparent: true,
@@ -716,24 +764,27 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
     }
 
     const isVideo = activeTex !== standbyTexture;
+    const activeKey: 'A' | 'B' | null =
+      activeTex === texARef.current ? 'A' : activeTex === texBRef.current ? 'B' : null;
+    const nowMs = performance.now();
 
-    // Continuous smooth VideoTexture upload (prevents fullscreen / rVFC frame stalls)
+    // Smart VideoTexture upload driven by requestVideoFrameCallback (prevents redundant texImage2D stalls in fullscreen)
     if (isVideo && activeVideo && activeVideo.readyState >= 2) {
-      const targetAniso = Math.min(8, gl.capabilities.getMaxAnisotropy());
-      if (activeTex.anisotropy !== targetAniso) {
-        activeTex.anisotropy = targetAniso;
-        activeTex.needsUpdate = true;
-      }
-      const nowMs = performance.now();
+      const hasRvfc = 'requestVideoFrameCallback' in activeVideo;
+      const frameSignaled = activeKey ? rVfcPendingRef.current[activeKey] : false;
       const timeChanged = activeVideo.currentTime !== lastVideoTimeRef.current;
       const texChanged = activeTex !== lastActiveTexRef.current;
-      const heartbeatInterval = isSoftwareGl ? 60 : 24;
-      const playingHeartbeat =
+      const fallbackInterval = isSoftwareGl ? 60 : 40;
+      const fallbackDue =
+        !hasRvfc &&
         !activeVideo.paused &&
         !activeVideo.ended &&
-        nowMs - lastUploadMsRef.current > heartbeatInterval;
+        nowMs - lastUploadMsRef.current > fallbackInterval;
 
-      if (timeChanged || texChanged || playingHeartbeat) {
+      if (frameSignaled || timeChanged || texChanged || fallbackDue) {
+        if (activeKey) {
+          rVfcPendingRef.current[activeKey] = false;
+        }
         lastVideoTimeRef.current = activeVideo.currentTime;
         lastActiveTexRef.current = activeTex;
         lastUploadMsRef.current = nowMs;
@@ -741,25 +792,32 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
       }
     }
 
-    // Update GPU 32x18 screen light map directly from the active video texture (zero CPU readback)
-    gpuLightSampler.mat.uniforms.uMap.value = activeTex;
-    gpuLightSampler.mat.uniforms.uIsVideo.value = isVideo ? 1.0 : 0.0;
-    gpuLightSampler.mat.uniforms.uRepeat.value.set(
-      isVideo ? uvRepeatX : 1,
-      isVideo ? uvRepeatY : 1,
-    );
-    gpuLightSampler.mat.uniforms.uOffset.value.set(
-      isVideo ? uvOffsetX : 0,
-      isVideo ? uvOffsetY : 0,
-    );
+    // Pace 32x18 GPU screen light sampling cleanly (~30Hz) so 60/120Hz fullscreen swaps stay butter smooth
+    const samplerDue =
+      activeTex !== lastSamplerTexRef.current || nowMs - lastSamplerMsRef.current >= 32;
+    if (samplerDue) {
+      lastSamplerTexRef.current = activeTex;
+      lastSamplerMsRef.current = nowMs;
 
-    const prevTarget = gl.getRenderTarget();
-    const prevAutoClear = gl.autoClear;
-    gl.autoClear = true;
-    gl.setRenderTarget(gpuLightSampler.rt);
-    gl.render(gpuLightSampler.scene, gpuLightSampler.camera);
-    gl.setRenderTarget(prevTarget);
-    gl.autoClear = prevAutoClear;
+      gpuLightSampler.mat.uniforms.uMap.value = activeTex;
+      gpuLightSampler.mat.uniforms.uIsVideo.value = isVideo ? 1.0 : 0.0;
+      gpuLightSampler.mat.uniforms.uRepeat.value.set(
+        isVideo ? uvRepeatX : 1,
+        isVideo ? uvRepeatY : 1,
+      );
+      gpuLightSampler.mat.uniforms.uOffset.value.set(
+        isVideo ? uvOffsetX : 0,
+        isVideo ? uvOffsetY : 0,
+      );
+
+      const prevTarget = gl.getRenderTarget();
+      const prevAutoClear = gl.autoClear;
+      gl.autoClear = true;
+      gl.setRenderTarget(gpuLightSampler.rt);
+      gl.render(gpuLightSampler.scene, gpuLightSampler.camera);
+      gl.setRenderTarget(prevTarget);
+      gl.autoClear = prevAutoClear;
+    }
 
     // Strong deterministic screen bounce reflections on seats scaled by user brightness preference
     const baseBounceGain =
@@ -804,11 +862,11 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
       );
     }
 
-    // Real-time projector light beam falling from booth to screen
+    // Restrained atmospheric projector beam (kept ultra-subtle on mobile wide FOV so frame stays crisp)
     const beamActive = showState === 'SHOW_PLAYING' && isVideo;
-    const outerTarget = beamActive ? (isPaused ? 0.035 : 0.24) : 0.0;
-    const innerTarget = beamActive ? (isPaused ? 0.025 : 0.17) : 0.0;
-    const flareTarget = beamActive ? (isPaused ? 0.2 : 0.92) : 0.15;
+    const outerTarget = beamActive ? (isPaused ? 0.008 : isMobile ? 0.022 : 0.042) : 0.0;
+    const innerTarget = beamActive ? (isPaused ? 0.005 : isMobile ? 0.014 : 0.026) : 0.0;
+    const flareTarget = beamActive ? (isPaused ? 0.05 : isMobile ? 0.1 : 0.16) : 0.02;
 
     if (outerBeamMatRef.current) {
       outerBeamMatRef.current.uniforms.uScreenLightTex.value = gpuLightSampler.rt.texture;
@@ -897,7 +955,7 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
         material={lensFlareMaterial}
         renderOrder={6}
       >
-        <planeGeometry args={[1.1, 0.65]} />
+        <planeGeometry args={[0.46, 0.28]} />
       </mesh>
     </group>
   );

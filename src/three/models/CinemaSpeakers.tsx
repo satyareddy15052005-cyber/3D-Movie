@@ -357,16 +357,62 @@ export const CinemaSpeakers: React.FC<CinemaSpeakersProps> = ({
     return arr;
   }, [wallBayZs, backZ, H, topTierY, W]);
 
-  // Rear-wall surround speakers flanking the back doors/booth
+  // Rear-wall surround speakers: dedicated speakers directly flanking the projector booth window
+  // plus corner rear surrounds in wider halls and an overhead booth-crown rear surround
   const rearSpeakerPositions = useMemo(() => {
-    const xOffset = Math.min(W * 0.34, Math.max(2.6, W / 2 - 1.4));
-    const yPos = Math.min(H - 1.45, Math.max(2.45, topTierY + 2.15));
-    return ([-1, 1] as const).map((side) => ({
-      x: side * xOffset,
-      y: yPos,
-      z: backZ - 0.22,
-      side,
-    }));
+    const boothY = Math.min(H - 1.4, topTierY + 3.25);
+    const boothWinW = Math.min(4.8, W * 0.42);
+    const boothWinH = Math.min(1.42, H * 0.24);
+    const winTop = Math.min(H - 0.28, boothY + boothWinH / 2);
+    const winBot = Math.max(0.25, boothY - boothWinH / 2);
+    const winMidY = (winTop + winBot) / 2;
+
+    const list: { x: number; y: number; z: number; yaw: number; pitch: number }[] = [];
+
+    // Twin primary rear surrounds mounted directly flanking the projection booth window on every hall
+    const boothSideX = Math.min(W / 2 - 0.68, boothWinW / 2 + 0.78);
+    ([-1, 1] as const).forEach((side) => {
+      list.push({
+        x: side * boothSideX,
+        y: winMidY,
+        z: backZ - 0.21,
+        yaw: Math.PI - side * 0.14,
+        pitch: 0,
+      });
+    });
+
+    // Wide rear-corner surround pair in medium & large theaters for full rear coverage
+    if (W >= 14.0) {
+      const cornerX = Math.max(boothSideX + 1.45, Math.min(W * 0.38, W / 2 - 1.05));
+      const cornerY = Math.min(H - 1.2, Math.max(2.35, winMidY - 0.12));
+      ([-1, 1] as const).forEach((side) => {
+        list.push({
+          x: side * cornerX,
+          y: cornerY,
+          z: backZ - 0.21,
+          yaw: Math.PI - side * 0.24,
+          pitch: 0,
+        });
+      });
+    }
+
+    // Center-rear monitor directly above or below booth window bezel
+    const crownClearance = H - winTop;
+    const rearCenterY =
+      crownClearance >= 0.92
+        ? winTop + 0.48
+        : Math.max(2.6, topTierY + 1.85);
+    if (crownClearance >= 0.92 || winBot - (topTierY + 2.45) >= 0.85) {
+      list.push({
+        x: 0,
+        y: rearCenterY,
+        z: backZ - 0.21,
+        yaw: Math.PI,
+        pitch: 0.12,
+      });
+    }
+
+    return list;
   }, [W, H, topTierY, backZ]);
 
   // Overhead Dolby Atmos speaker coordinates
@@ -500,16 +546,33 @@ export const CinemaSpeakers: React.FC<CinemaSpeakersProps> = ({
         </group>
       ))}
 
-      {/* Rear-Wall Surround Speakers Flanking the Projection Booth */}
+      {/* Rear-Wall Surround Speakers Flanking & Framing the Projection Booth */}
       {rearSpeakerPositions.map((sp, i) => (
         <group
           key={`rear-surround-${i}`}
           position={[sp.x, sp.y, sp.z]}
-          rotation={[0, Math.PI - sp.side * 0.18, 0]}
+          rotation={[sp.pitch, sp.yaw, 0]}
         >
           {renderSurroundUnit(`rear-unit-${i}`)}
         </group>
       ))}
+
+      {/* Front Stage Center-Channel Dialog Monitor Pod (Angled Upward Below Screen) */}
+      <group
+        position={[0, 0.72, screenPosition[2] + 0.56]}
+        rotation={[-0.22, 0, 0]}
+        scale={speakerScale}
+      >
+        <mesh geometry={geometries.lineArrayCabinetGeo} material={materials.cabinetMat} />
+        <mesh position={[0, 0, 0.27]} geometry={geometries.lineArrayBaffleGeo} material={materials.baffleMat} />
+        {[-0.22, 0.22].map((mx, mi) => (
+          <group key={`ctr-mid-${mi}`} position={[mx, 0, 0.285]}>
+            <mesh geometry={geometries.lineMidRimGeo} material={materials.metalTrimMat} />
+            <mesh position={[0, 0, -0.022]} geometry={geometries.lineMidConeGeo} material={materials.coneMat} />
+          </group>
+        ))}
+        <mesh position={[0, 0, 0.285]} geometry={geometries.lineHornGeo} material={materials.hornThroatMat} />
+      </group>
 
       {/* Overhead Dolby Atmos Ceiling Gimbal Speaker Pods */}
       {atmosSpeakerPositions.map((ap, i) => (

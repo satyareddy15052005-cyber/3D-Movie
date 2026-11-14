@@ -646,7 +646,6 @@ export const SeatModels: React.FC<SeatModelsProps> = ({
       <instancedMesh
         ref={cushionRef}
         args={[geometries.cushionGeo, materials.primaryMat, count]}
-        castShadow
         receiveShadow
         onClick={handleSeatClick}
         onPointerMove={handleSeatPointerMove}
@@ -664,7 +663,6 @@ export const SeatModels: React.FC<SeatModelsProps> = ({
       <instancedMesh
         ref={headrestRef}
         args={[geometries.headrestGeo, materials.primaryMat, count]}
-        castShadow
         receiveShadow
         onClick={handleSeatClick}
         onPointerMove={handleSeatPointerMove}
@@ -673,13 +671,11 @@ export const SeatModels: React.FC<SeatModelsProps> = ({
       <instancedMesh
         ref={leftArmRef}
         args={[geometries.armGeo, materials.trimMat, count]}
-        castShadow
         receiveShadow
       />
       <instancedMesh
         ref={rightArmRef}
         args={[geometries.armGeo, materials.trimMat, count]}
-        castShadow
         receiveShadow
       />
       <instancedMesh ref={cupholderRef} args={[geometries.cupGeo, materials.cupMat, count]} />
@@ -698,7 +694,6 @@ export const SeatModels: React.FC<SeatModelsProps> = ({
         <instancedMesh
           ref={footrestRef}
           args={[geometries.footrestGeo, materials.primaryMat, count]}
-          castShadow
           receiveShadow
         />
       )}

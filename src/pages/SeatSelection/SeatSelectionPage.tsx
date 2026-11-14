@@ -157,13 +157,6 @@ export const SeatSelectionPage: React.FC = () => {
                           seat.seatNumber % 2 === 0 &&
                           seat.seatNumber < config.seatsPerRow;
 
-                        let curvedOffsetPx = 0;
-                        if (config.seatPattern === 'curved_arc') {
-                          const mid = (config.seatsPerRow + 1) / 2;
-                          const norm = (seat.seatNumber - mid) / Math.max(1, mid - 1);
-                          curvedOffsetPx = Math.round(-(norm * norm) * 6);
-                        }
-
                         let seatClasses =
                           'bg-emerald-600/80 border-emerald-400/70 text-white hover:bg-emerald-500';
                         if (isUnavailable) {
@@ -188,11 +181,6 @@ export const SeatSelectionPage: React.FC = () => {
                               onClick={() => handleSeatClick(seat)}
                               onMouseEnter={() => setHoveredSeat(seat)}
                               onMouseLeave={() => setHoveredSeat(null)}
-                              style={
-                                curvedOffsetPx !== 0
-                                  ? { transform: `translateY(${curvedOffsetPx}px)` }
-                                  : undefined
-                              }
                               aria-label={`Row ${seat.rowLabel} Seat ${seat.seatNumber} (${
                                 isSelected ? 'Selected' : seat.status
                               })`}

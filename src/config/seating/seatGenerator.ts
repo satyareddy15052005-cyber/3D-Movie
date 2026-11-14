@@ -64,10 +64,6 @@ export function generateSeatsForTheater(config: TheaterConfiguration): SeatData[
   } = config;
 
   const { centeredXs, aisleXs } = computeBaseRowXs(config);
-  const maxAbsX = Math.max(
-    1,
-    ...centeredXs.map((x) => Math.abs(x)),
-  );
 
   for (let r = 0; r < seatingRows; r++) {
     const rowLabel = ROW_LABELS[r] || `R${r + 1}`;
@@ -83,17 +79,8 @@ export function generateSeatsForTheater(config: TheaterConfiguration): SeatData[
     for (let s = 1; s <= seatsPerRow; s++) {
       const seatId = `${rowLabel}${s}`;
       const seatX = Number(((centeredXs[s - 1] ?? 0) + staggerShift).toFixed(3));
-
-      let seatZ = baseRowZ;
-      let yaw = 0;
-      if (seatPattern === 'curved_arc') {
-        const normX = seatX / maxAbsX;
-        const arcForward = Math.min(0.88, maxAbsX * 0.068) * (normX * normX);
-        seatZ = baseRowZ - arcForward;
-        const distToScreen = Math.max(4, seatZ - screenPosition[2]);
-        yaw = Number((Math.atan2(-seatX, distToScreen) * 0.78).toFixed(4));
-      }
-      seatZ = Number(seatZ.toFixed(3));
+      const seatZ = Number(baseRowZ.toFixed(3));
+      const yaw = 0;
 
       let status: SeatStatus = 'available';
       if (unavailableSeatIds.includes(seatId)) {
@@ -115,8 +102,8 @@ export function generateSeatsForTheater(config: TheaterConfiguration): SeatData[
       }
 
       const eyeY = Number((tierY + seatEyeOffsetY).toFixed(3));
-      const eyeX = Number((seatX - Math.sin(yaw) * 0.08).toFixed(3));
-      const eyeZ = Number((seatZ + Math.cos(yaw) * 0.08).toFixed(3));
+      const eyeX = Number(seatX.toFixed(3));
+      const eyeZ = Number((seatZ + 0.08).toFixed(3));
 
       seats.push({
         id: seatId,

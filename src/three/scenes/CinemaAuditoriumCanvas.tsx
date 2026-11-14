@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { Canvas } from '@react-three/fiber';
 import {
@@ -75,6 +75,15 @@ export const CinemaAuditoriumCanvas: React.FC<CinemaAuditoriumCanvasProps> = Rea
   const webglInfo = useMemo(() => detectWebGLSupport(), []);
   const [contextLost, setContextLost] = useState(false);
   const [lightFactor, setLightFactor] = useState(1);
+  const [isFullscreen, setIsFullscreen] = useState(
+    () => typeof document !== 'undefined' && Boolean(document.fullscreenElement),
+  );
+
+  useEffect(() => {
+    const onFs = () => setIsFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener('fullscreenchange', onFs);
+    return () => document.removeEventListener('fullscreenchange', onFs);
+  }, []);
   const screenBrightnessRef = useRef(0.34);
   const screenBounceRef = useRef<ScreenBounceSample>({
     r: 0.72,
@@ -115,15 +124,19 @@ export const CinemaAuditoriumCanvas: React.FC<CinemaAuditoriumCanvasProps> = Rea
     );
   }
 
-  // Use crisp Retina DPR on mobile & desktop hardware GPUs while keeping 60fps touch rotation smoothness
+  // Cap Retina/4K laptop fullscreen pixel ratio cleanly so hardware video decode never stutters or freezes
   const isMobile = isMobileDevice();
   const dpr: number | [number, number] = webglInfo.isSoftwareGl
     ? 0.75
-    : graphicsQuality === 'low'
-      ? [1, 1.25]
-      : graphicsQuality === 'medium'
-        ? [1, isMobile ? 1.5 : 1.75]
-        : [1, isMobile ? 1.85 : 2];
+    : isFullscreen && !isMobile
+      ? graphicsQuality === 'low'
+        ? [1, 1.1]
+        : [1, 1.25]
+      : graphicsQuality === 'low'
+        ? [1, 1.2]
+        : graphicsQuality === 'medium'
+          ? [1, isMobile ? 1.4 : 1.5]
+          : [1, isMobile ? 1.75 : 1.75];
 
   const initialFov = computeAdaptiveCinemaFov(
     config.categoryId,
