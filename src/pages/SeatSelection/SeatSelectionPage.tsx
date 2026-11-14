@@ -31,9 +31,6 @@ export const SeatSelectionPage: React.FC = () => {
     return (
       <div className="flex min-h-[70vh] flex-col items-center justify-center bg-[#070709] p-6 text-center">
         <p className="font-display text-3xl text-[#F4F1EA]">Select a Theater First</p>
-        <p className="mt-2 text-sm text-neutral-400">
-          Each auditorium has a unique seating layout. Choose a theater to view its map.
-        </p>
         <button
           type="button"
           onClick={() => navigate('theaters')}
@@ -72,12 +69,8 @@ export const SeatSelectionPage: React.FC = () => {
               <span>Back to {config.theaterName}</span>
             </button>
             <h1 className="font-display text-3xl sm:text-4xl font-semibold text-[#F4F1EA]">
-              Select Your Seat — {config.theaterName}
+              Select Seat — {config.theaterName}
             </h1>
-            <p className="text-sm text-neutral-400">
-              {config.seatingArrangementText}. Your 3D auditorium camera will walk directly to
-              this exact seat.
-            </p>
           </div>
 
           {/* Seat Legend (Color + Explicit Text & Icon for accessibility) */}
@@ -117,12 +110,8 @@ export const SeatSelectionPage: React.FC = () => {
                   config.screenCurvature > 0.15 ? 'scale-y-125' : ''
                 }`}
               />
-              <p className="mt-2 text-xs font-medium tracking-[0.2em] sm:tracking-[0.25em] text-neutral-400 uppercase">
-                Screen · {config.screenWidth}m × {config.screenHeight}m
-                {config.screenCurvature > 0 ? ' Curved Projection' : ' Flat Projection'}
-              </p>
-              <p className="mt-1.5 text-[11px] text-neutral-500 sm:hidden">
-                Swipe left or right to view all seats in the row
+              <p className="mt-2 text-xs font-medium tracking-[0.22em] text-neutral-400 uppercase">
+                Screen
               </p>
             </div>
 
@@ -227,25 +216,16 @@ export const SeatSelectionPage: React.FC = () => {
               })}
             </div>
 
-            {/* Hover Preview Bar */}
-            <div className="mt-8 flex items-center justify-between border-t border-white/[0.06] pt-4 text-xs text-neutral-400">
-              <span>
-                {hoveredSeat
-                  ? `Hovering: Row ${hoveredSeat.rowLabel}, Seat ${hoveredSeat.seatNumber} (${hoveredSeat.id}) · ${hoveredSeat.status}`
-                  : 'Hover or tap any seat to inspect row and seat number'}
-              </span>
-              <span className="font-mono-tabular hidden sm:inline">
-                Tier Rise: {config.rowElevationStep}m / row
-              </span>
-            </div>
+            {hoveredSeat && (
+              <div className="mt-6 border-t border-white/[0.06] pt-3 text-xs text-neutral-400">
+                Row {hoveredSeat.rowLabel} · Seat {hoveredSeat.seatNumber}
+              </div>
+            )}
           </div>
 
           {/* Selected Seat Details & Continue Panel */}
           <div className="lg:col-span-4 rounded-xl border border-white/[0.08] bg-[#0E0F13] p-6 space-y-6">
-            <div className="space-y-1 border-b border-white/[0.08] pb-4">
-              <p className="text-xs font-medium tracking-[0.18em] text-[#D4AF37] uppercase">
-                Seat Reservation
-              </p>
+            <div className="border-b border-white/[0.08] pb-4">
               <h2 className="font-display text-2xl font-semibold text-[#F4F1EA]">
                 {selectedSeat ? `Seat ${selectedSeat.id}` : 'No Seat Selected'}
               </h2>
@@ -254,38 +234,24 @@ export const SeatSelectionPage: React.FC = () => {
             {selectedSeat ? (
               <div className="space-y-3 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-neutral-400">Auditorium</span>
+                  <span className="text-neutral-400">Theater</span>
                   <span className="text-[#F4F1EA] font-medium">{config.shortName}</span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-neutral-400">Row & Number</span>
+                  <span className="text-neutral-400">Row &amp; Seat</span>
                   <span className="font-mono-tabular text-[#F4F1EA] font-medium">
                     Row {selectedSeat.rowLabel} · Seat {selectedSeat.seatNumber}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-neutral-400">Tier Category</span>
+                  <span className="text-neutral-400">Tier</span>
                   <span className="capitalize text-[#E5C158] font-medium">
                     {selectedSeat.status}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-neutral-400">3D Eye Coordinates</span>
-                  <span className="font-mono-tabular text-xs text-neutral-300">
-                    ({selectedSeat.eyePosition[0]}m, {selectedSeat.eyePosition[1]}m,{' '}
-                    {selectedSeat.eyePosition[2]}m)
-                  </span>
-                </div>
-                <p className="pt-2 text-xs text-neutral-400 leading-relaxed">
-                  Click the highlighted red seat again to deselect, or choose any other green or
-                  gold seat.
-                </p>
               </div>
             ) : (
-              <p className="text-sm text-neutral-400 leading-relaxed">
-                Select one available (green) or premium (gold) seat on the map to synchronize your
-                3D auditorium viewpoint before uploading videos.
-              </p>
+              <p className="text-sm text-neutral-400">Choose an available seat.</p>
             )}
 
             <button
@@ -298,7 +264,7 @@ export const SeatSelectionPage: React.FC = () => {
                   : 'bg-neutral-800 text-neutral-500 cursor-not-allowed'
               }`}
             >
-              <span>Continue to Video Upload</span>
+              <span>Continue</span>
               <ArrowRight className="h-4 w-4" />
             </button>
           </div>

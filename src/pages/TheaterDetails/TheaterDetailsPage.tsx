@@ -13,9 +13,6 @@ export const TheaterDetailsPage: React.FC = () => {
     return (
       <div className="flex min-h-[70vh] flex-col items-center justify-center bg-[#070709] p-6 text-center">
         <p className="font-display text-3xl text-[#F4F1EA]">No Theater Selected</p>
-        <p className="mt-2 text-sm text-neutral-400">
-          Choose one of our fifteen bespoke cinema auditoriums across five categories.
-        </p>
         <button
           type="button"
           onClick={() => navigate('theaters')}
@@ -42,7 +39,7 @@ export const TheaterDetailsPage: React.FC = () => {
           className="inline-flex items-center gap-2 text-xs font-medium text-neutral-400 hover:text-[#F4F1EA] cursor-pointer mb-6"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
-          <span>Back to All 15 Theaters</span>
+          <span>Back to Theaters</span>
         </button>
 
         {/* Top Preview Split */}
@@ -81,7 +78,7 @@ export const TheaterDetailsPage: React.FC = () => {
                   }`}
                 >
                   <ImageIcon className="h-3.5 w-3.5" />
-                  <span>Auditorium Photo</span>
+                  <span>Photo</span>
                 </button>
                 <button
                   type="button"
@@ -93,15 +90,10 @@ export const TheaterDetailsPage: React.FC = () => {
                   }`}
                 >
                   <Box className="h-3.5 w-3.5" />
-                  <span>Interactive 3D Preview</span>
+                  <span>3D View</span>
                 </button>
               </div>
             </div>
-            {viewMode === '3d' && (
-              <p className="mt-2.5 text-xs text-neutral-400">
-                Drag to orbit inside the live 3D {config.theaterName} auditorium · Scroll to zoom
-              </p>
-            )}
           </div>
 
           {/* Right: Configuration Summary & CTA */}
@@ -124,7 +116,7 @@ export const TheaterDetailsPage: React.FC = () => {
               {/* 3 Ambience Variations Switcher */}
               <div className="space-y-2 rounded-lg border border-white/[0.08] bg-black/30 p-3">
                 <p className="text-[11px] font-medium uppercase tracking-wider text-neutral-400">
-                  Category Ambiences ({categoryVariants.length} Editions)
+                  Ambience
                 </p>
                 <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                   {categoryVariants.map((variant) => {
@@ -161,29 +153,27 @@ export const TheaterDetailsPage: React.FC = () => {
                 </div>
               </div>
 
-              <p className="text-sm text-neutral-300 leading-relaxed">{config.description}</p>
-
               <div className="border-t border-white/[0.08] pt-5 space-y-3.5 text-xs sm:text-sm">
                 <div className="flex justify-between gap-4">
-                  <span className="text-neutral-400 shrink-0">Screen Size</span>
+                  <span className="text-neutral-400 shrink-0">Screen</span>
                   <span className="text-right text-[#F4F1EA] font-medium">
                     {config.screenSpecText}
                   </span>
                 </div>
                 <div className="flex justify-between gap-4">
-                  <span className="text-neutral-400 shrink-0">Seating Layout</span>
+                  <span className="text-neutral-400 shrink-0">Seating</span>
                   <span className="text-right text-[#F4F1EA] font-medium">
                     {config.seatingArrangementText}
                   </span>
                 </div>
                 <div className="flex justify-between gap-4">
-                  <span className="text-neutral-400 shrink-0">Audio Profile</span>
+                  <span className="text-neutral-400 shrink-0">Audio</span>
                   <span className="text-right text-[#F4F1EA] font-medium">
                     {config.audioExperienceText}
                   </span>
                 </div>
                 <div className="flex justify-between gap-4">
-                  <span className="text-neutral-400 shrink-0">Lighting Style</span>
+                  <span className="text-neutral-400 shrink-0">Lighting</span>
                   <span className="text-right text-[#F4F1EA] font-medium">
                     {config.lightingStyleText}
                   </span>
@@ -204,12 +194,10 @@ export const TheaterDetailsPage: React.FC = () => {
           </div>
         </div>
 
-        {/* Unique Architectural Features List */}
-        <div className="mt-12 rounded-xl border border-white/[0.08] bg-[#0E0F13] p-7">
-          <h2 className="font-display text-2xl font-semibold text-[#F4F1EA]">
-            Unique Auditorium Architecture & Features
-          </h2>
-          <div className="mt-6 grid grid-cols-1 gap-4 md:grid-cols-2">
+        {/* Features List */}
+        <div className="mt-10 rounded-xl border border-white/[0.08] bg-[#0E0F13] p-7">
+          <h2 className="font-display text-2xl font-semibold text-[#F4F1EA]">Features</h2>
+          <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
             {config.features.map((feat, i) => (
               <div
                 key={i}

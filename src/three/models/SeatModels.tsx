@@ -17,6 +17,7 @@ interface SeatModelsProps {
   isPlaying: boolean;
   lightFactor?: number; // 0 = dark show, 1 = house lights on
   interactive?: boolean;
+  enableHover?: boolean;
   screenBounceUniforms?: ScreenBounceUniforms;
   onSelectSeat?: (seatId: string) => void;
   onHoverSeat?: (seatId: string | null) => void;
@@ -309,6 +310,7 @@ export const SeatModels: React.FC<SeatModelsProps> = ({
   isPlaying,
   lightFactor = 1,
   interactive = false,
+  enableHover = false,
   screenBounceUniforms,
   onSelectSeat,
   onHoverSeat,
@@ -599,7 +601,7 @@ export const SeatModels: React.FC<SeatModelsProps> = ({
   });
 
   const handleSeatPointerMove = (e: ThreeEvent<PointerEvent>) => {
-    if (!interactive || e.instanceId === undefined) return;
+    if (!interactive || !enableHover || e.instanceId === undefined) return;
     if (e.nativeEvent.pointerType === 'touch') return;
     e.stopPropagation();
     const seat = seats[e.instanceId];
@@ -613,13 +615,13 @@ export const SeatModels: React.FC<SeatModelsProps> = ({
   };
 
   const handleSeatPointerOut = () => {
-    if (!interactive) return;
+    if (!interactive || !enableHover) return;
     document.body.style.cursor = 'auto';
     onHoverSeat?.(null);
   };
 
   const handleSeatClick = (e: ThreeEvent<MouseEvent>) => {
-    if (!interactive || e.instanceId === undefined) return;
+    if (!interactive || e.instanceId === undefined || e.delta > 8) return;
     e.stopPropagation();
     const seat = seats[e.instanceId];
     if (!seat || seat.status === 'unavailable') return;
@@ -647,26 +649,26 @@ export const SeatModels: React.FC<SeatModelsProps> = ({
         ref={cushionRef}
         args={[geometries.cushionGeo, materials.primaryMat, count]}
         receiveShadow
-        onClick={handleSeatClick}
-        onPointerMove={handleSeatPointerMove}
-        onPointerOut={handleSeatPointerOut}
+        onClick={interactive ? handleSeatClick : undefined}
+        onPointerMove={enableHover ? handleSeatPointerMove : undefined}
+        onPointerOut={enableHover ? handleSeatPointerOut : undefined}
       />
       <instancedMesh
         ref={backrestRef}
         args={[geometries.backrestGeo, materials.primaryMat, count]}
         castShadow
         receiveShadow
-        onClick={handleSeatClick}
-        onPointerMove={handleSeatPointerMove}
-        onPointerOut={handleSeatPointerOut}
+        onClick={interactive ? handleSeatClick : undefined}
+        onPointerMove={enableHover ? handleSeatPointerMove : undefined}
+        onPointerOut={enableHover ? handleSeatPointerOut : undefined}
       />
       <instancedMesh
         ref={headrestRef}
         args={[geometries.headrestGeo, materials.primaryMat, count]}
         receiveShadow
-        onClick={handleSeatClick}
-        onPointerMove={handleSeatPointerMove}
-        onPointerOut={handleSeatPointerOut}
+        onClick={interactive ? handleSeatClick : undefined}
+        onPointerMove={enableHover ? handleSeatPointerMove : undefined}
+        onPointerOut={enableHover ? handleSeatPointerOut : undefined}
       />
       <instancedMesh
         ref={leftArmRef}

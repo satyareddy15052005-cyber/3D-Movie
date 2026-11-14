@@ -28,19 +28,19 @@ export const StepProgressBar: React.FC = () => {
     {
       route: 'seat_selection',
       number: '02',
-      label: 'Select Seat',
+      label: 'Seat',
       reachable: Boolean(selectedTheaterId),
     },
     {
       route: 'video_upload',
       number: '03',
-      label: 'Upload Playlist',
+      label: 'Upload',
       reachable: Boolean(selectedTheaterId && selectedSeatId),
     },
     {
       route: 'confirmation',
       number: '04',
-      label: 'Confirm Show',
+      label: 'Confirm',
       reachable: Boolean(selectedTheaterId && selectedSeatId && playlist.length > 0),
     },
   ];

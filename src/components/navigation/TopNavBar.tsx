@@ -67,14 +67,14 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({ onOpenAbout }) => {
               route === 'theaters' || route === 'theater_details' ? 'text-[#D4AF37]' : ''
             }`}
           >
-            Explore Theaters
+            Theaters
           </button>
           <button
             type="button"
             onClick={() => handleNavClick('about')}
             className="whitespace-nowrap shrink-0 cursor-pointer transition-colors hover:text-[#F4F1EA]"
           >
-            About Experience
+            About
           </button>
           <button
             type="button"
@@ -121,14 +121,14 @@ export const TopNavBar: React.FC<TopNavBarProps> = ({ onOpenAbout }) => {
             onClick={() => handleNavClick('theaters')}
             className="block w-full py-2.5 text-left text-sm font-medium text-neutral-200 hover:text-[#D4AF37]"
           >
-            Explore Theaters
+            Theaters
           </button>
           <button
             type="button"
             onClick={() => handleNavClick('about')}
             className="block w-full py-2.5 text-left text-sm font-medium text-neutral-200 hover:text-[#D4AF37]"
           >
-            About Experience
+            About
           </button>
           <button
             type="button"

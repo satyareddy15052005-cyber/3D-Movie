@@ -1,8 +1,7 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import { Monitor, Trash2, Volume2, X } from 'lucide-react';
 import { useCinemaStore } from '../../store/cinemaStore';
 import { GraphicsQuality } from '../../types/cinema';
-import { detectWebGLSupport } from '../../utils/formatters';
 
 export const SettingsModal: React.FC = () => {
   const {
@@ -21,7 +20,6 @@ export const SettingsModal: React.FC = () => {
   } = useCinemaStore();
 
   const [cacheClearedMsg, setCacheClearedMsg] = useState(false);
-  const webglInfo = useMemo(() => detectWebGLSupport(), []);
 
   if (!isSettingsOpen) return null;
 
@@ -58,11 +56,8 @@ export const SettingsModal: React.FC = () => {
           <section className="space-y-3">
             <div className="flex items-center gap-2 text-sm font-medium text-[#F4F1EA]">
               <Monitor className="h-4 w-4 text-[#D4AF37]" />
-              <span>3D Graphics Quality</span>
+              <span>Graphics Quality</span>
             </div>
-            <p className="text-xs text-neutral-400">
-              Detected WebGL renderer: {webglInfo.supported ? webglInfo.rendererName : 'Unavailable'}
-            </p>
             <div className="grid grid-cols-3 gap-2">
               {(['low', 'medium', 'high'] as GraphicsQuality[]).map((tier) => (
                 <button
@@ -144,7 +139,7 @@ export const SettingsModal: React.FC = () => {
               />
 
               <label className="flex items-center justify-between pt-1 text-xs text-neutral-300 cursor-pointer">
-                <span>Web Audio Spatial Panning Simulation</span>
+                <span>3D Spatial Audio</span>
                 <input
                   type="checkbox"
                   checked={audioSettings.spatialSimulation}
@@ -157,12 +152,10 @@ export const SettingsModal: React.FC = () => {
             </div>
           </section>
 
-          {/* 4DX Virtual Simulation Defaults */}
+          {/* 4DX Effects */}
           <section className="space-y-3 border-t border-white/[0.08] pt-5">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium text-[#F4F1EA]">
-                4DX Browser Simulation Effects
-              </span>
+              <span className="text-sm font-medium text-[#F4F1EA]">4DX Effects</span>
               <input
                 type="checkbox"
                 checked={fourDxSettings.enabled}
@@ -170,20 +163,14 @@ export const SettingsModal: React.FC = () => {
                 className="h-4 w-4 accent-[#D4AF37]"
               />
             </div>
-            <p className="text-xs text-neutral-400 leading-relaxed">
-              Virtual browser-only simulation (subtle camera motion, chair vibration animation, and
-              synthesized wind audio). Disabled by default for calm viewing.
-            </p>
           </section>
 
-          {/* Local IndexedDB Management */}
+          {/* Local Media Cache */}
           <section className="space-y-3 border-t border-white/[0.08] pt-5">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <p className="text-sm font-medium text-[#F4F1EA]">Local Browser Media Cache</p>
-                <p className="text-xs text-neutral-400">
-                  Videos stay strictly inside your browser IndexedDB ({playlist.length} queued).
-                </p>
+                <p className="text-sm font-medium text-[#F4F1EA]">Local Cache</p>
+                <p className="text-xs text-neutral-400">{playlist.length} queued</p>
               </div>
               <button
                 type="button"
@@ -195,9 +182,7 @@ export const SettingsModal: React.FC = () => {
               </button>
             </div>
             {cacheClearedMsg && (
-              <p className="text-xs text-emerald-400">
-                Local video cache and temporary object URLs have been cleared.
-              </p>
+              <p className="text-xs text-emerald-400">Cache cleared.</p>
             )}
           </section>
         </div>

@@ -18,22 +18,15 @@ export const TheaterSelectionPage: React.FC = () => {
 
   return (
     <div className="min-h-[calc(100vh-73px)] bg-[#070709] text-[#F4F1EA]">
-      <div className="mx-auto max-w-[1440px] px-6 py-14 lg:px-10 lg:py-20">
-        <div className="max-w-3xl space-y-3 border-b border-white/[0.08] pb-8">
-          <p className="text-xs font-medium tracking-[0.2em] text-[#D4AF37] uppercase">
-            Step 01 · Select Auditorium
-          </p>
-          <h1 className="font-display text-4xl sm:text-5xl font-semibold text-[#F4F1EA]">
-            15 Screening Rooms Across 5 Categories
+      <div className="mx-auto max-w-[1440px] px-6 py-12 lg:px-10 lg:py-16">
+        <div className="border-b border-white/[0.08] pb-6">
+          <h1 className="font-display text-3xl sm:text-5xl font-semibold text-[#F4F1EA]">
+            Select Theater
           </h1>
-          <p className="text-sm sm:text-base text-neutral-400">
-            Every cinema category offers three bespoke auditorium ambiences—each with distinct
-            upholstery finishes, lighting palettes, acoustic contours, and 3D architecture.
-          </p>
         </div>
 
         {/* Category Filter Bar */}
-        <div className="mt-8 flex flex-wrap items-center gap-2">
+        <div className="mt-6 flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={() => setSelectedCategory('all')}
@@ -43,7 +36,7 @@ export const TheaterSelectionPage: React.FC = () => {
                 : 'border-white/15 bg-[#0E0F13] text-neutral-300 hover:border-[#D4AF37]/50 hover:text-white'
             }`}
           >
-            All Categories (15)
+            All (15)
           </button>
           {THEATER_CATEGORIES.map((cat) => (
             <button
@@ -56,7 +49,7 @@ export const TheaterSelectionPage: React.FC = () => {
                   : 'border-white/15 bg-[#0E0F13] text-neutral-300 hover:border-[#D4AF37]/50 hover:text-white'
               }`}
             >
-              {cat.name} (3)
+              {cat.name}
             </button>
           ))}
         </div>
@@ -67,18 +60,10 @@ export const TheaterSelectionPage: React.FC = () => {
             const categoryTheaters = getTheatersByCategory(cat.categoryId);
             return (
               <section key={cat.categoryId} className="space-y-6">
-                <div className="flex flex-col gap-2 border-b border-white/[0.06] pb-4 md:flex-row md:items-end md:justify-between">
-                  <div>
-                    <p className="text-[11px] font-medium tracking-[0.18em] text-[#D4AF37] uppercase">
-                      {cat.subtitle} · 3 Ambiences
-                    </p>
-                    <h2 className="font-display text-2xl sm:text-3xl font-semibold text-[#F4F1EA]">
-                      {cat.name}
-                    </h2>
-                  </div>
-                  <p className="max-w-xl text-xs sm:text-sm text-neutral-400">
-                    {cat.description}
-                  </p>
+                <div className="border-b border-white/[0.06] pb-3">
+                  <h2 className="font-display text-2xl sm:text-3xl font-semibold text-[#F4F1EA]">
+                    {cat.name}
+                  </h2>
                 </div>
 
                 <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -122,7 +107,7 @@ export const TheaterSelectionPage: React.FC = () => {
                             </div>
                           </div>
 
-                          <div className="p-6 space-y-2.5">
+                          <div className="p-6 space-y-2">
                             <div className="flex flex-wrap items-center gap-2 text-xs text-[#D4AF37]">
                               <span className="font-mono-tabular">{totalSeats} Seats</span>
                               <span aria-hidden="true">·</span>
@@ -135,26 +120,17 @@ export const TheaterSelectionPage: React.FC = () => {
                             <h3 className="font-display text-2xl font-semibold text-[#F4F1EA]">
                               {theater.theaterName}
                             </h3>
-
-                            <p className="text-xs sm:text-sm text-neutral-400 leading-relaxed">
-                              {theater.tagline}
-                            </p>
                           </div>
                         </div>
 
-                        <div className="px-6 pb-6 pt-3 border-t border-white/[0.06] space-y-3">
-                          <div className="text-xs text-neutral-400">
-                            <span className="text-neutral-200 font-medium">Layout:</span>{' '}
-                            {theater.seatingRows} rows × {theater.seatsPerRow} seats
-                          </div>
-
+                        <div className="px-6 pb-6 pt-3 border-t border-white/[0.06]">
                           <div className="flex items-center gap-3">
                             <button
                               type="button"
                               onClick={() => selectTheater(theater.theaterId, 'theater_details')}
                               className="inline-flex flex-1 items-center justify-center gap-2 rounded-md border border-white/15 bg-white/[0.03] px-3 py-2.5 text-xs font-semibold uppercase tracking-wider text-[#F4F1EA] cursor-pointer hover:border-[#D4AF37] hover:text-[#E5C158] transition-colors"
                             >
-                              <span>Inspect Details</span>
+                              <span>Details</span>
                             </button>
                             <button
                               type="button"

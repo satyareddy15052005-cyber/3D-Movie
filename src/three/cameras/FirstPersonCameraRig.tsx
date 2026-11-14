@@ -76,6 +76,7 @@ export const FirstPersonCameraRig: React.FC<FirstPersonCameraRigProps> = ({
   });
   const isDraggingRef = useRef(false);
   const activePointerIdRef = useRef<number | null>(null);
+  const isFirstTouchMoveRef = useRef(false);
   const lastPointerRef = useRef({ x: 0, y: 0, timeMs: 0 });
 
   const baseQuatRef = useRef(new THREE.Quaternion());
@@ -356,9 +357,15 @@ export const FirstPersonCameraRig: React.FC<FirstPersonCameraRigProps> = ({
       }
       activePointerIdRef.current = e.pointerId;
       isDraggingRef.current = true;
+      isFirstTouchMoveRef.current = e.pointerType === 'touch';
       lastPointerRef.current = { x: e.clientX, y: e.clientY, timeMs: performance.now() };
       lookOffsetRef.current.yawVel = 0;
       lookOffsetRef.current.pitchVel = 0;
+      try {
+        dom.setPointerCapture(e.pointerId);
+      } catch {
+        // Ignore if pointer capture unsupported
+      }
     };
 
     const onPointerMove = (e: PointerEvent) => {
@@ -373,23 +380,25 @@ export const FirstPersonCameraRig: React.FC<FirstPersonCameraRigProps> = ({
       const rawDy = e.clientY - lastPointerRef.current.y;
       lastPointerRef.current = { x: e.clientX, y: e.clientY, timeMs: nowMs };
 
-      // Clamp abrupt OS touch-handoff spikes so mobile rotation stays silky smooth
-      const dx = THREE.MathUtils.clamp(rawDx, -90, 90);
-      const dy = THREE.MathUtils.clamp(rawDy, -90, 90);
+      // Ignore tiny sub-pixel jitter and absorb browser touch-slop initial jump cleanly
+      const maxStep = isFirstTouchMoveRef.current ? 18 : 70;
+      isFirstTouchMoveRef.current = false;
+      const dx = THREE.MathUtils.clamp(rawDx, -maxStep, maxStep);
+      const dy = THREE.MathUtils.clamp(rawDy, -maxStep, maxStep);
 
       const isTouch = e.pointerType === 'touch';
-      const yawStep = dx * (isTouch ? 0.0052 : 0.0044);
-      const pitchStep = dy * (isTouch ? 0.0038 : 0.0032);
+      const yawStep = dx * (isTouch ? 0.0046 : 0.0042);
+      const pitchStep = dy * (isTouch ? 0.0033 : 0.0031);
 
       const look = lookOffsetRef.current;
       look.targetYaw += yawStep;
       look.targetPitch = THREE.MathUtils.clamp(look.targetPitch + pitchStep, -1.22, 1.22);
 
       if (isTouch) {
-        const instYawVel = THREE.MathUtils.clamp(yawStep / elapsedSec, -6.5, 6.5);
-        const instPitchVel = THREE.MathUtils.clamp(pitchStep / elapsedSec, -3.5, 3.5);
-        look.yawVel = THREE.MathUtils.lerp(look.yawVel, instYawVel, 0.45);
-        look.pitchVel = THREE.MathUtils.lerp(look.pitchVel, instPitchVel, 0.45);
+        const instYawVel = THREE.MathUtils.clamp(yawStep / elapsedSec, -5.0, 5.0);
+        const instPitchVel = THREE.MathUtils.clamp(pitchStep / elapsedSec, -2.8, 2.8);
+        look.yawVel = THREE.MathUtils.lerp(look.yawVel, instYawVel, 0.35);
+        look.pitchVel = THREE.MathUtils.lerp(look.pitchVel, instPitchVel, 0.35);
       }
     };
 
@@ -397,10 +406,20 @@ export const FirstPersonCameraRig: React.FC<FirstPersonCameraRigProps> = ({
       if (activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) {
         return;
       }
+      if (activePointerIdRef.current !== null) {
+        try {
+          if (dom.hasPointerCapture(activePointerIdRef.current)) {
+            dom.releasePointerCapture(activePointerIdRef.current);
+          }
+        } catch {
+          // Ignore release failure
+        }
+      }
       isDraggingRef.current = false;
       activePointerIdRef.current = null;
-      // Only carry forward touch inertia if the last move was recent (< 70ms)
-      if (performance.now() - lastPointerRef.current.timeMs > 70) {
+      isFirstTouchMoveRef.current = false;
+      // Only carry forward touch inertia if the last move was recent (< 75ms)
+      if (performance.now() - lastPointerRef.current.timeMs > 75) {
         lookOffsetRef.current.yawVel = 0;
         lookOffsetRef.current.pitchVel = 0;
       }
@@ -409,6 +428,7 @@ export const FirstPersonCameraRig: React.FC<FirstPersonCameraRigProps> = ({
     const onBlur = () => {
       isDraggingRef.current = false;
       activePointerIdRef.current = null;
+      isFirstTouchMoveRef.current = false;
       lookOffsetRef.current.yawVel = 0;
       lookOffsetRef.current.pitchVel = 0;
     };
@@ -463,7 +483,7 @@ export const FirstPersonCameraRig: React.FC<FirstPersonCameraRigProps> = ({
     if (!isDraggingRef.current && (Math.abs(look.yawVel) > 0.002 || Math.abs(look.pitchVel) > 0.002)) {
       look.targetYaw += look.yawVel * dt;
       look.targetPitch = THREE.MathUtils.clamp(look.targetPitch + look.pitchVel * dt, -1.22, 1.22);
-      const decay = Math.exp(-5.4 * dt);
+      const decay = Math.exp(-4.8 * dt);
       look.yawVel *= decay;
       look.pitchVel *= decay;
     } else if (!isDraggingRef.current) {
@@ -471,7 +491,7 @@ export const FirstPersonCameraRig: React.FC<FirstPersonCameraRigProps> = ({
       look.pitchVel = 0;
     }
 
-    const followLambda = isDraggingRef.current ? 18 : 12;
+    const followLambda = isDraggingRef.current ? 16 : 11;
     look.yaw = THREE.MathUtils.damp(look.yaw, look.targetYaw, followLambda, dt);
     look.pitch = THREE.MathUtils.damp(look.pitch, look.targetPitch, followLambda, dt);
 
@@ -552,7 +572,7 @@ export const FirstPersonCameraRig: React.FC<FirstPersonCameraRigProps> = ({
         enablePan={false}
         enableDamping={!isSoftwareGl}
         dampingFactor={0.075}
-        rotateSpeed={mobile ? 0.85 : 0.72}
+        rotateSpeed={mobile ? 0.62 : 0.72}
         minDistance={2.8}
         maxDistance={hallMaxDistance}
         minAzimuthAngle={-Infinity}

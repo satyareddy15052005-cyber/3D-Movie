@@ -124,19 +124,25 @@ export const CinemaAuditoriumCanvas: React.FC<CinemaAuditoriumCanvasProps> = Rea
     );
   }
 
-  // Cap Retina/4K laptop fullscreen pixel ratio cleanly so hardware video decode never stutters or freezes
+  // Cap Retina/4K and mobile pixel ratio cleanly so camera rotation and video decode stay fluid
   const isMobile = isMobileDevice();
   const dpr: number | [number, number] = webglInfo.isSoftwareGl
     ? 0.75
-    : isFullscreen && !isMobile
+    : isMobile
       ? graphicsQuality === 'low'
-        ? [1, 1.1]
-        : [1, 1.25]
-      : graphicsQuality === 'low'
-        ? [1, 1.2]
+        ? [1, 1.0]
         : graphicsQuality === 'medium'
-          ? [1, isMobile ? 1.4 : 1.5]
-          : [1, isMobile ? 1.75 : 1.75];
+          ? [1, 1.15]
+          : [1, 1.25]
+      : isFullscreen
+        ? graphicsQuality === 'low'
+          ? [1, 1.1]
+          : [1, 1.25]
+        : graphicsQuality === 'low'
+          ? [1, 1.2]
+          : graphicsQuality === 'medium'
+            ? [1, 1.5]
+            : [1, 1.75];
 
   const initialFov = computeAdaptiveCinemaFov(
     config.categoryId,
@@ -215,6 +221,7 @@ export const CinemaAuditoriumCanvas: React.FC<CinemaAuditoriumCanvasProps> = Rea
           isPlaying={isPlaying}
           lightFactor={lightFactor}
           interactive={entranceComplete && viewMode !== 'screen_full'}
+          enableHover={!isMobile && entranceComplete && viewMode === 'hall'}
           screenBounceUniforms={screenBounceUniforms}
           onSelectSeat={onSelectSeat}
           onHoverSeat={onHoverSeat}

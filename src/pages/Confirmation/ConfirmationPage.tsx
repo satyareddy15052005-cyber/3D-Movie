@@ -22,9 +22,6 @@ export const ConfirmationPage: React.FC = () => {
     return (
       <div className="flex min-h-[70vh] flex-col items-center justify-center bg-[#070709] p-6 text-center">
         <p className="font-display text-3xl text-[#F4F1EA]">Screening Details Incomplete</p>
-        <p className="mt-2 text-sm text-neutral-400">
-          Ensure a theater, seat, and at least one local video are selected.
-        </p>
         <button
           type="button"
           onClick={() =>
@@ -68,17 +65,10 @@ export const ConfirmationPage: React.FC = () => {
       <StepProgressBar />
 
       <div className="mx-auto max-w-[1200px] px-6 py-10 lg:px-10 lg:py-16">
-        <div className="space-y-2 border-b border-white/[0.08] pb-6">
-          <p className="text-xs font-medium tracking-[0.2em] text-[#D4AF37] uppercase">
-            Final Screening Confirmation
-          </p>
+        <div className="border-b border-white/[0.08] pb-6">
           <h1 className="font-display text-3xl sm:text-5xl font-semibold text-[#F4F1EA]">
-            Ready to Enter the Auditorium
+            Confirm Screening
           </h1>
-          <p className="text-sm text-neutral-400">
-            Verify your auditorium, exact seat coordinates, and playlist sequence before the house
-            doors open.
-          </p>
         </div>
 
         <div className="mt-10 grid grid-cols-1 gap-8 lg:grid-cols-12">
@@ -103,7 +93,7 @@ export const ConfirmationPage: React.FC = () => {
 
                 <div className="border-t border-white/[0.06] pt-4 space-y-2.5 text-xs sm:text-sm">
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-neutral-400 shrink-0">Reserved Seat</span>
+                    <span className="text-neutral-400 shrink-0">Seat</span>
                     <span className="inline-flex items-center gap-1.5 font-mono-tabular font-semibold text-[#E5C158] text-right">
                       <Armchair className="h-4 w-4 shrink-0" />
                       <span>
@@ -113,22 +103,13 @@ export const ConfirmationPage: React.FC = () => {
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-neutral-400 shrink-0">3D Viewpoint</span>
-                    <span className="font-mono-tabular text-xs text-neutral-300 text-right">
-                      ({selectedSeat.eyePosition[0]}m, {selectedSeat.eyePosition[1]}m,{' '}
-                      {selectedSeat.eyePosition[2]}m)
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-neutral-400 shrink-0">Playlist Mode</span>
+                    <span className="text-neutral-400 shrink-0">Mode</span>
                     <span className="text-[#F4F1EA] font-medium text-right">
-                      {videoMode === 'without_ads'
-                        ? 'Option A · Without Ads'
-                        : 'Option B · With Ads'}
+                      {videoMode === 'without_ads' ? 'Without Ads' : 'With Ads'}
                     </span>
                   </div>
                   <div className="flex items-center justify-between gap-3">
-                    <span className="text-neutral-400 shrink-0">Screen Dimensions</span>
+                    <span className="text-neutral-400 shrink-0">Screen</span>
                     <span className="font-mono-tabular text-neutral-200 text-right">
                       {selectedTheaterConfig.screenWidth}m × {selectedTheaterConfig.screenHeight}m
                     </span>
@@ -163,10 +144,10 @@ export const ConfirmationPage: React.FC = () => {
               <div className="flex items-center justify-between border-b border-white/[0.08] pb-4">
                 <div>
                   <h2 className="font-display text-2xl font-semibold text-[#F4F1EA]">
-                    Exact Playback Sequence
+                    Playlist
                   </h2>
                   <p className="text-xs text-neutral-400 mt-0.5">
-                    {playlist.length} {playlist.length === 1 ? 'video' : 'videos'} · Total runtime{' '}
+                    {playlist.length} {playlist.length === 1 ? 'video' : 'videos'} ·{' '}
                     {formatDuration(totalDuration)} · {formatFileSize(totalBytes)}
                   </p>
                 </div>
@@ -198,8 +179,7 @@ export const ConfirmationPage: React.FC = () => {
                           {item.fileName}
                         </p>
                         <p className="text-xs font-mono-tabular text-neutral-400">
-                          {item.mimeType} · {item.width}×{item.height} ·{' '}
-                          {formatFileSize(item.fileSize)}
+                          {item.width}×{item.height} · {formatFileSize(item.fileSize)}
                         </p>
                       </div>
                     </div>
@@ -212,20 +192,14 @@ export const ConfirmationPage: React.FC = () => {
               </ul>
             </div>
 
-            <div className="border-t border-white/[0.08] pt-6 space-y-4">
-              <p className="text-xs text-neutral-400 leading-relaxed">
-                Upon entering, the auditorium opens illuminated while you walk down the aisle to{' '}
-                <strong className="text-[#F4F1EA]">Seat {selectedSeat.id}</strong>. House lights
-                will smoothly dim as your screening begins.
-              </p>
-
+            <div className="border-t border-white/[0.08] pt-6">
               <button
                 type="button"
                 onClick={handleConfirmAndEnter}
                 className="inline-flex w-full items-center justify-center gap-3 rounded-md bg-[#D4AF37] px-6 py-4 text-xs font-semibold uppercase tracking-wider text-[#070709] cursor-pointer transition-colors hover:bg-[#E5C158] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#D4AF37]"
               >
                 <Play className="h-4 w-4 fill-current" />
-                <span>Confirm and Enter Theater</span>
+                <span>Enter Theater</span>
               </button>
             </div>
           </div>

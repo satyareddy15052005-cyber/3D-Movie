@@ -50,10 +50,7 @@ export const VideoUploadPage: React.FC = () => {
   if (!selectedTheaterConfig || !selectedSeat) {
     return (
       <div className="flex min-h-[70vh] flex-col items-center justify-center bg-[#070709] p-6 text-center">
-        <p className="font-display text-3xl text-[#F4F1EA]">Theater & Seat Required</p>
-        <p className="mt-2 text-sm text-neutral-400">
-          Please choose your auditorium and seat before uploading your video playlist.
-        </p>
+        <p className="font-display text-3xl text-[#F4F1EA]">Theater &amp; Seat Required</p>
         <button
           type="button"
           onClick={() => navigate(selectedTheaterConfig ? 'seat_selection' : 'theaters')}
@@ -161,12 +158,8 @@ export const VideoUploadPage: React.FC = () => {
               <span>Change Seat ({selectedSeat.id})</span>
             </button>
             <h1 className="font-display text-3xl sm:text-5xl font-semibold text-[#F4F1EA]">
-              CREATE YOUR CINEMA PLAYLIST
+              Upload Video
             </h1>
-            <p className="text-sm sm:text-base text-neutral-400">
-              Bring your own videos and enjoy them on the big screen. Files remain locally inside
-              your browser.
-            </p>
           </div>
 
           <div className="text-xs text-neutral-400 md:text-right space-y-1">
@@ -174,8 +167,7 @@ export const VideoUploadPage: React.FC = () => {
               {selectedTheaterConfig.theaterName} · Seat {selectedSeat.id}
             </p>
             <p className="font-mono-tabular">
-              Total Show Duration: {formatDuration(totalDurationSeconds)} ·{' '}
-              {formatFileSize(totalBytes)}
+              {formatDuration(totalDurationSeconds)} · {formatFileSize(totalBytes)}
             </p>
           </div>
         </div>
@@ -197,53 +189,40 @@ export const VideoUploadPage: React.FC = () => {
           </div>
         )}
 
-        {/* Option A vs Option B Mode Selector */}
-        <div className="mt-8 grid grid-cols-1 gap-5 md:grid-cols-2">
+        {/* Mode Selector */}
+        <div className="mt-8 grid grid-cols-1 gap-4 md:grid-cols-2">
           <button
             type="button"
             onClick={() => setVideoMode('without_ads')}
-            className={`text-left rounded-xl border p-6 transition-colors cursor-pointer ${
+            className={`text-left rounded-xl border p-5 transition-colors cursor-pointer ${
               videoMode === 'without_ads'
                 ? 'border-[#D4AF37] bg-[#D4AF37]/[0.08]'
                 : 'border-white/[0.08] bg-[#0E0F13] hover:border-white/25'
             }`}
           >
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[#D4AF37]">
-                Option A
-              </span>
+              <h2 className="font-display text-xl sm:text-2xl font-semibold text-[#F4F1EA]">
+                WITHOUT ADS
+              </h2>
               <span className="text-xs font-mono-tabular text-neutral-400">Single Video</span>
             </div>
-            <h2 className="mt-2 font-display text-2xl font-semibold text-[#F4F1EA]">
-              WITHOUT ADS
-            </h2>
-            <p className="mt-1.5 text-sm text-neutral-400">
-              Enjoy one uninterrupted video in your private cinema.
-            </p>
           </button>
 
           <button
             type="button"
             onClick={() => setVideoMode('with_ads')}
-            className={`text-left rounded-xl border p-6 transition-colors cursor-pointer ${
+            className={`text-left rounded-xl border p-5 transition-colors cursor-pointer ${
               videoMode === 'with_ads'
                 ? 'border-[#D4AF37] bg-[#D4AF37]/[0.08]'
                 : 'border-white/[0.08] bg-[#0E0F13] hover:border-white/25'
             }`}
           >
             <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold uppercase tracking-[0.18em] text-[#D4AF37]">
-                Option B
-              </span>
-              <span className="text-xs font-mono-tabular text-neutral-400">Ordered Playlist</span>
+              <h2 className="font-display text-xl sm:text-2xl font-semibold text-[#F4F1EA]">
+                WITH ADS
+              </h2>
+              <span className="text-xs font-mono-tabular text-neutral-400">Playlist</span>
             </div>
-            <h2 className="mt-2 font-display text-2xl font-semibold text-[#F4F1EA]">
-              WITH ADS
-            </h2>
-            <p className="mt-1.5 text-sm text-neutral-400">
-              Create your own cinema playlist with multiple videos and drag-and-drop sequence
-              control.
-            </p>
           </button>
         </div>
 
@@ -305,35 +284,23 @@ export const VideoUploadPage: React.FC = () => {
                   ? processingLabel
                   : videoMode === 'without_ads'
                     ? playlist.length > 0
-                      ? 'Drop a video here or click to replace your feature video'
-                      : 'Drop your MP4, WebM, or MKV video here, or click to browse'
-                    : 'Drop multiple MP4, WebM, or MKV videos here, or click to append to playlist'}
+                      ? 'Drop video or click to replace'
+                      : 'Drop MP4, WebM, or MKV video or click to browse'
+                    : 'Drop videos or click to add'}
               </h3>
-              <p className="mt-1.5 text-xs text-neutral-400">
-                {videoMode === 'without_ads'
-                  ? 'Option A allows 1 local video file of any size (MP4 / WebM / MKV — streams directly from disk)'
-                  : 'Option B queues multiple local videos of any size in the exact order you arrange below'}
-              </p>
             </div>
 
             {/* Uploaded Video List / Playlist Queue */}
             {playlist.length > 0 && (
               <div className="rounded-xl border border-white/[0.08] bg-[#0E0F13] overflow-hidden">
                 <div className="flex items-center justify-between border-b border-white/[0.08] px-5 py-4">
-                  <div>
-                    <h3 className="text-sm font-semibold text-[#F4F1EA]">
-                      {videoMode === 'without_ads'
-                        ? 'Selected Feature Video'
-                        : `Cinema Playlist Sequence (${playlist.length} Videos)`}
-                    </h3>
-                    {videoMode === 'with_ads' && (
-                      <p className="text-xs text-neutral-400 mt-0.5">
-                        Drag rows or use arrows to arrange exact playback order
-                      </p>
-                    )}
-                  </div>
+                  <h3 className="text-sm font-semibold text-[#F4F1EA]">
+                    {videoMode === 'without_ads'
+                      ? 'Selected Video'
+                      : `Playlist (${playlist.length})`}
+                  </h3>
                   <span className="font-mono-tabular text-xs text-[#E5C158]">
-                    {formatDuration(totalDurationSeconds)} total
+                    {formatDuration(totalDurationSeconds)}
                   </span>
                 </div>
 
@@ -469,14 +436,11 @@ export const VideoUploadPage: React.FC = () => {
             )}
           </div>
 
-          {/* Right: Live Local Video Preview & Continue */}
+          {/* Right: Video Preview & Continue */}
           <div className="lg:col-span-5 rounded-xl border border-white/[0.08] bg-[#0E0F13] p-6 space-y-6">
-            <div className="min-w-0 space-y-1">
-              <p className="text-xs font-medium tracking-[0.18em] text-[#D4AF37] uppercase">
-                Local Video Monitor
-              </p>
+            <div className="min-w-0">
               <h3 className="font-display text-xl sm:text-2xl font-semibold text-[#F4F1EA] truncate">
-                {activePreview ? activePreview.fileName : 'Awaiting Video Upload'}
+                {activePreview ? activePreview.fileName : 'Preview'}
               </h3>
             </div>
 
@@ -492,8 +456,8 @@ export const VideoUploadPage: React.FC = () => {
                   />
                 </div>
                 <div className="flex justify-between text-xs text-neutral-400 font-mono-tabular">
-                  <span>Duration: {formatDuration(activePreview.duration)}</span>
-                  <span>Size: {formatFileSize(activePreview.fileSize)}</span>
+                  <span>{formatDuration(activePreview.duration)}</span>
+                  <span>{formatFileSize(activePreview.fileSize)}</span>
                   <span>
                     {activePreview.width}×{activePreview.height}
                   </span>
@@ -502,28 +466,25 @@ export const VideoUploadPage: React.FC = () => {
             ) : (
               <div className="flex aspect-video w-full flex-col items-center justify-center rounded-lg border border-white/[0.06] bg-[#08090C] p-6 text-center">
                 <Film className="h-8 w-8 text-neutral-600" />
-                <p className="mt-2 text-xs text-neutral-400">
-                  Upload a local MP4, WebM, or MKV video to verify playback and metadata before
-                  entering the auditorium.
-                </p>
+                <p className="mt-2 text-xs text-neutral-500">No video selected</p>
               </div>
             )}
 
             <div className="border-t border-white/[0.08] pt-5 space-y-3">
               <div className="flex justify-between text-xs text-neutral-400">
-                <span>Playback Mode</span>
+                <span>Mode</span>
                 <span className="text-[#F4F1EA] font-medium">
-                  {videoMode === 'without_ads' ? 'Without Ads (Single)' : 'With Ads (Playlist)'}
+                  {videoMode === 'without_ads' ? 'Without Ads' : 'With Ads'}
                 </span>
               </div>
               <div className="flex justify-between text-xs text-neutral-400">
-                <span>Queued Videos</span>
+                <span>Videos</span>
                 <span className="font-mono-tabular text-[#F4F1EA] font-medium">
                   {playlist.length}
                 </span>
               </div>
               <div className="flex justify-between text-xs text-neutral-400">
-                <span>Estimated Show Runtime</span>
+                <span>Runtime</span>
                 <span className="font-mono-tabular text-[#E5C158] font-medium">
                   {formatDuration(totalDurationSeconds)}
                 </span>
@@ -539,7 +500,7 @@ export const VideoUploadPage: React.FC = () => {
                     : 'bg-neutral-800 text-neutral-500 cursor-not-allowed'
                 }`}
               >
-                <span>Review & Confirm Screening</span>
+                <span>Continue</span>
                 <ArrowRight className="h-4 w-4" />
               </button>
             </div>

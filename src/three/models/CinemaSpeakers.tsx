@@ -557,23 +557,6 @@ export const CinemaSpeakers: React.FC<CinemaSpeakersProps> = ({
         </group>
       ))}
 
-      {/* Front Stage Center-Channel Dialog Monitor Pod (Angled Upward Below Screen) */}
-      <group
-        position={[0, 0.72, screenPosition[2] + 0.56]}
-        rotation={[-0.22, 0, 0]}
-        scale={speakerScale}
-      >
-        <mesh geometry={geometries.lineArrayCabinetGeo} material={materials.cabinetMat} />
-        <mesh position={[0, 0, 0.27]} geometry={geometries.lineArrayBaffleGeo} material={materials.baffleMat} />
-        {[-0.22, 0.22].map((mx, mi) => (
-          <group key={`ctr-mid-${mi}`} position={[mx, 0, 0.285]}>
-            <mesh geometry={geometries.lineMidRimGeo} material={materials.metalTrimMat} />
-            <mesh position={[0, 0, -0.022]} geometry={geometries.lineMidConeGeo} material={materials.coneMat} />
-          </group>
-        ))}
-        <mesh position={[0, 0, 0.285]} geometry={geometries.lineHornGeo} material={materials.hornThroatMat} />
-      </group>
-
       {/* Overhead Dolby Atmos Ceiling Gimbal Speaker Pods */}
       {atmosSpeakerPositions.map((ap, i) => (
         <group

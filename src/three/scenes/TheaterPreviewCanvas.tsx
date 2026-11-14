@@ -73,7 +73,7 @@ const PreviewOrbitRig: React.FC<{ config: TheaterConfiguration; isSoftwareGl: bo
       enablePan={false}
       enableDamping={!isSoftwareGl}
       dampingFactor={0.075}
-      rotateSpeed={isMobileDevice() ? 0.85 : 0.72}
+      rotateSpeed={isMobileDevice() ? 0.62 : 0.72}
       minDistance={2.8}
       maxDistance={maxDist}
       maxPolarAngle={Math.PI * 0.58}
@@ -104,7 +104,7 @@ export const TheaterPreviewCanvas: React.FC<TheaterPreviewCanvasProps> = ({ conf
 
   return (
     <Canvas
-      dpr={webglInfo.isSoftwareGl ? 0.75 : [1, 1.75]}
+      dpr={webglInfo.isSoftwareGl ? 0.75 : isMobileDevice() ? [1, 1.25] : [1, 1.75]}
       gl={{
         antialias: !webglInfo.isSoftwareGl,
         toneMapping: THREE.ACESFilmicToneMapping,

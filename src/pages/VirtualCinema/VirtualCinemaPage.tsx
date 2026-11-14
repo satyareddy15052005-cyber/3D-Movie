@@ -92,6 +92,8 @@ export const VirtualCinemaPage: React.FC = () => {
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   const [hudVisible, setHudVisible] = useState(true);
+  const hudVisibleRef = useRef(true);
+  hudVisibleRef.current = hudVisible;
   const [controlsManuallyHidden, setControlsManuallyHidden] = useState(false);
   const [showMixerPopover, setShowMixerPopover] = useState(false);
   const [show4dxPopover, setShow4dxPopover] = useState(false);
@@ -814,9 +816,11 @@ export const VirtualCinemaPage: React.FC = () => {
 
   const isHoveringHudRef = useRef(false);
 
-  // Auto-hide HUD during active playback on inactivity (stays visible while paused)
+  // Auto-hide HUD during active playback on inactivity (avoid redundant state churn while dragging)
   const bumpHudActivity = useCallback(() => {
-    setHudVisible(true);
+    if (!hudVisibleRef.current) {
+      setHudVisible(true);
+    }
     if (inactivityTimerRef.current) {
       window.clearTimeout(inactivityTimerRef.current);
     }
@@ -1112,19 +1116,16 @@ export const VirtualCinemaPage: React.FC = () => {
         <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-[#070709] p-6 text-center">
           <div className="h-10 w-10 animate-spin rounded-full border-2 border-[#D4AF37]/25 border-t-[#D4AF37]" />
           <p className="mt-5 font-display text-2xl text-[#F4F1EA]">
-            Preparing {selectedTheaterConfig.theaterName}
-          </p>
-          <p className="mt-1.5 text-xs text-neutral-400">
-            Synchronizing Seat {selectedSeat.id} · Compiling Shaders & Acoustic Profile
+            {selectedTheaterConfig.theaterName}
           </p>
         </div>
       )}
 
       {/* Entrance Walk Prompt */}
       {sceneReady && !entranceComplete && (
-        <div className="absolute bottom-6 left-1/2 z-30 w-[min(92vw,380px)] -translate-x-1/2 flex items-center justify-between gap-3 rounded-lg border border-white/15 bg-[#090A0E]/92 px-4 py-2.5">
-          <span className="text-[11px] sm:text-xs text-neutral-300 truncate">
-            Walking to Seat <strong className="text-[#E5C158]">{selectedSeat.id}</strong>
+        <div className="absolute bottom-6 left-1/2 z-30 flex items-center gap-3 rounded-lg border border-white/15 bg-[#090A0E]/92 px-4 py-2">
+          <span className="text-xs text-neutral-300">
+            Seat <strong className="text-[#E5C158]">{selectedSeat.id}</strong>
           </span>
           <button
             type="button"
@@ -1135,25 +1136,21 @@ export const VirtualCinemaPage: React.FC = () => {
             }}
             className="shrink-0 rounded border border-white/20 px-3 py-1 text-[11px] font-medium text-[#F4F1EA] hover:border-[#D4AF37] cursor-pointer"
           >
-            Skip to Seat
+            Skip
           </button>
         </div>
       )}
 
-      {/* Seated Pre-Show Banner (before lights dim) */}
+      {/* Seated Pre-Show Start CTA */}
       {sceneReady && entranceComplete && showState === 'AUDITORIUM_OPEN' && (
-        <div className="absolute bottom-36 sm:bottom-28 left-1/2 z-30 w-[min(92vw,440px)] -translate-x-1/2 flex flex-col items-center gap-2.5 sm:gap-3 rounded-xl border border-white/15 bg-[#090A0E]/92 px-4 py-3.5 sm:px-6 sm:py-4 text-center">
-          <p className="text-[11px] sm:text-xs text-neutral-300 leading-relaxed">
-            Seated in <strong className="text-[#E5C158]">{selectedSeat.id}</strong> · Drag to look
-            360° around the hall or tap any seat to shift
-          </p>
+        <div className="absolute bottom-36 sm:bottom-28 left-1/2 z-30 -translate-x-1/2">
           <button
             type="button"
             onClick={beginShowSequence}
-            className="inline-flex items-center gap-2 rounded-md bg-[#D4AF37] px-5 py-2 text-[11px] sm:text-xs font-semibold uppercase tracking-wider text-[#070709] hover:bg-[#E5C158] cursor-pointer"
+            className="inline-flex items-center gap-2 rounded-md bg-[#D4AF37] px-5 py-2.5 text-xs font-semibold uppercase tracking-wider text-[#070709] hover:bg-[#E5C158] cursor-pointer shadow-lg whitespace-nowrap"
           >
             <Play className="h-3.5 w-3.5 fill-current" />
-            <span>Dim Lights & Start Show</span>
+            <span>Start Show</span>
           </button>
         </div>
       )}
@@ -1173,29 +1170,15 @@ export const VirtualCinemaPage: React.FC = () => {
               className="inline-flex items-center gap-2 rounded-lg border border-[#D4AF37]/60 bg-[#090A0E]/94 px-4 py-2 text-xs font-semibold text-[#E5C158] shadow-lg cursor-pointer hover:bg-[#D4AF37] hover:text-[#070709] transition-colors whitespace-nowrap"
             >
               <Volume2 className="h-3.5 w-3.5" />
-              <span>Tap to Enable Dolby Audio</span>
+              <span>Tap to Enable Audio</span>
             </button>
           </div>
         )}
 
-      {/* Show Starting Transition Indicator */}
-      {showState === 'SHOW_STARTING' && (
-        <div className="pointer-events-none absolute top-24 sm:top-16 left-1/2 z-20 w-max max-w-[90vw] -translate-x-1/2 rounded-lg border border-white/10 bg-[#090A0E]/88 px-4 py-2 text-center text-[11px] sm:text-xs text-neutral-300">
-          Dimming auditorium lights · Starting presentation
-        </div>
-      )}
-
-      {/* Paused House Lights Indicator */}
-      {showState === 'SHOW_PLAYING' && isPaused && !showCompleted && (
-        <div className="pointer-events-none absolute top-24 sm:top-16 left-1/2 z-20 -translate-x-1/2 rounded-lg border border-[#D4AF37]/35 bg-[#090A0E]/88 px-3.5 py-1.5 text-[11px] sm:text-xs text-[#E5C158] whitespace-nowrap">
-          Paused · House Lights On
-        </div>
-      )}
-
-      {/* Mid-show Interactive Seat Hover / Shift Notification */}
+      {/* Mid-show Interactive Seat Hover Target */}
       {entranceComplete && hoveredSeatId && hoveredSeatId !== selectedSeat.id && (
         <div className="pointer-events-none absolute top-24 sm:top-16 left-1/2 z-20 -translate-x-1/2 rounded-lg border border-[#38bdf8]/45 bg-[#090A0E]/92 px-3.5 py-1.5 text-[11px] sm:text-xs text-[#bae6fd] whitespace-nowrap">
-          Tap to shift to Seat <strong className="text-white">{hoveredSeatId}</strong>
+          Seat <strong className="text-white">{hoveredSeatId}</strong>
         </div>
       )}
 
@@ -1350,13 +1333,6 @@ export const VirtualCinemaPage: React.FC = () => {
           </button>
         </div>
       </div>
-
-      {/* Hall View Instruction Hint */}
-      {entranceComplete && viewMode === 'hall' && !showCompleted && (
-        <div className="pointer-events-none absolute bottom-36 sm:bottom-32 left-1/2 z-20 w-max max-w-[90vw] -translate-x-1/2 rounded-lg border border-white/15 bg-[#090A0E]/90 px-3.5 py-1.5 text-center text-[11px] sm:text-xs text-neutral-200">
-          Drag to orbit · Pinch or scroll to zoom · Tap any seat to shift
-        </div>
-      )}
 
       {/* Show Controls Toggle Button when Manually Hidden */}
       {controlsManuallyHidden && !showCompleted && entranceComplete && (
@@ -1669,7 +1645,6 @@ export const VirtualCinemaPage: React.FC = () => {
                   <p className="font-mono-tabular text-[10px] sm:text-[11px] text-neutral-400">
                     {String(currentPlaybackIndex + 1).padStart(2, '0')} /{' '}
                     {String(playlist.length).padStart(2, '0')}
-                    <span className="hidden sm:inline"> · Local Screening</span>
                   </p>
                 </div>
               </div>
@@ -1799,19 +1774,16 @@ export const VirtualCinemaPage: React.FC = () => {
               {selectedTheaterConfig.theaterName} · Seat {selectedSeat.id}
             </p>
             <h2 className="font-display text-4xl sm:text-5xl font-semibold text-[#F4F1EA]">
-              YOUR SHOW HAS ENDED
+              Show Ended
             </h2>
-            <p className="text-sm text-neutral-300 leading-relaxed">
-              The house lights have been restored. Thank you for screening with Aurelia Cinema.
-            </p>
-            <div className="flex flex-col sm:flex-row justify-center gap-3 pt-3">
+            <div className="flex flex-col sm:flex-row justify-center gap-3 pt-2">
               <button
                 type="button"
                 onClick={handleRestartShow}
                 className="inline-flex items-center justify-center gap-2 rounded-md border border-white/20 px-5 py-3 text-xs font-semibold uppercase tracking-wider text-[#F4F1EA] hover:border-[#D4AF37] cursor-pointer"
               >
                 <RotateCcw className="h-4 w-4" />
-                <span>Replay Screening</span>
+                <span>Replay</span>
               </button>
               <button
                 type="button"
@@ -1819,7 +1791,7 @@ export const VirtualCinemaPage: React.FC = () => {
                 className="inline-flex items-center justify-center gap-2 rounded-md bg-[#D4AF37] px-6 py-3 text-xs font-semibold uppercase tracking-wider text-[#070709] hover:bg-[#E5C158] cursor-pointer"
               >
                 <Home className="h-4 w-4" />
-                <span>Return Home</span>
+                <span>Home</span>
               </button>
             </div>
           </div>
@@ -1833,27 +1805,24 @@ export const VirtualCinemaPage: React.FC = () => {
           role="dialog"
           aria-modal="true"
         >
-          <div className="w-full max-w-md rounded-xl border border-white/15 bg-[#0E0F13] p-6 space-y-4">
+          <div className="w-full max-w-md rounded-xl border border-white/15 bg-[#0E0F13] p-6 space-y-5">
             <h2 className="font-display text-2xl font-semibold text-[#F4F1EA]">
-              Leave the Auditorium?
+              Leave Auditorium?
             </h2>
-            <p className="text-sm text-neutral-400">
-              Playback will stop and your screening session will return to the main lobby.
-            </p>
-            <div className="flex justify-end gap-3 pt-2">
+            <div className="flex justify-end gap-3">
               <button
                 type="button"
                 onClick={() => setShowExitConfirm(false)}
                 className="rounded-md border border-white/15 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-neutral-200 hover:bg-white/5 cursor-pointer"
               >
-                Stay in Seat
+                Stay
               </button>
               <button
                 type="button"
                 onClick={handleExitAndReturnHome}
                 className="rounded-md bg-[#D4AF37] px-5 py-2 text-xs font-semibold uppercase tracking-wider text-[#070709] hover:bg-[#E5C158] cursor-pointer"
               >
-                Leave & Return Home
+                Leave
               </button>
             </div>
           </div>
