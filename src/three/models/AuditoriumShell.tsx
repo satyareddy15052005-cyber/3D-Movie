@@ -10,6 +10,7 @@ import {
   applyScreenBounceToMaterial,
   ScreenBounceUniforms,
 } from '../lighting/screenBounceShader';
+import { CinemaSpeakers } from './CinemaSpeakers';
 
 interface AuditoriumShellProps {
   config: TheaterConfiguration;
@@ -762,18 +763,15 @@ export const AuditoriumShell: React.FC<AuditoriumShellProps> = ({
         <boxGeometry args={[W, 0.4, L]} />
       </mesh>
 
-      {/* Overhead Dolby-Style Ceiling Acoustic Speakers */}
-      {[-W * 0.22, W * 0.22].map((ox, xi) =>
-        [-L * 0.18, L * 0.08].map((oz, zi) => (
-          <mesh
-            key={`overhead-spk-${xi}-${zi}`}
-            position={[ox, H - 0.28, oz]}
-            material={materials.speakerMat}
-          >
-            <boxGeometry args={[0.55, 0.16, 0.55]} />
-          </mesh>
-        )),
-      )}
+      {/* Real Multi-Part 3D Cinema Speakers (Side/Rear Surrounds, Overhead Atmos Pods & Front Line-Array Subwoofers) */}
+      <CinemaSpeakers
+        config={config}
+        wallBayZs={wallBayZs}
+        topTierY={topTierY}
+        lightFactor={lightFactor}
+        speakerGrilleMap={textures.speakerGrilleMap}
+        screenBounceUniforms={screenBounceUniforms}
+      />
 
       {/* Emergency Exit Doors near Front Left & Right + Dim EXIT Sign + Red Fire Extinguisher */}
       {[-1, 1].map((side) => (
@@ -972,25 +970,6 @@ export const AuditoriumShell: React.FC<AuditoriumShellProps> = ({
                   <planeGeometry args={[1.65, 3.3]} />
                 </mesh>
               )}
-
-              {/* Side Surround Speaker Arrays */}
-              {idx >= 1 && idx <= wallBayZs.length - 1 && (
-                <group
-                  position={[
-                    side * (W / 2 - 0.45),
-                    Math.min(H - 1.5, topTierY + 2.4 - (wallBayZs.length - idx) * 0.15),
-                    bz + 0.85,
-                  ]}
-                  rotation={[0.18, (side * -Math.PI) / 2, 0]}
-                >
-                  <mesh position={[-0.28, 0, 0]} material={materials.speakerMat} castShadow>
-                    <boxGeometry args={[0.38, 0.62, 0.3]} />
-                  </mesh>
-                  <mesh position={[0.28, 0, 0]} material={materials.speakerMat} castShadow>
-                    <boxGeometry args={[0.38, 0.62, 0.3]} />
-                  </mesh>
-                </group>
-              )}
             </group>
           );
         }),
@@ -1017,17 +996,6 @@ export const AuditoriumShell: React.FC<AuditoriumShellProps> = ({
             ))}
           </group>
         ))}
-
-      {/* Front Corner Subwoofer / Proscenium Towers tucked outside Screen Frame */}
-      {[-1, 1].map((side) => (
-        <mesh
-          key={`front-speaker-${side}`}
-          position={[side * (W / 2 - 0.52), 1.65, frontZ + 0.65]}
-          material={materials.speakerMat}
-        >
-          <boxGeometry args={[0.55, 2.2, 0.55]} />
-        </mesh>
-      ))}
 
       {/* ===================================================================== */}
       {/* DISTINCT CEILING ARCHITECTURES & LIGHTING STYLES                      */}

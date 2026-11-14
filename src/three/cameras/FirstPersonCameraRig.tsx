@@ -4,6 +4,10 @@ import { useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import gsap from 'gsap';
 import { CameraViewMode, SeatData, TheaterConfiguration } from '../../types/cinema';
+import { cinemaAudioEngine } from '../../services/audio/cinemaAudioEngine';
+
+const _listenerFwd = new THREE.Vector3();
+const _listenerUp = new THREE.Vector3();
 
 interface FirstPersonCameraRigProps {
   config: TheaterConfiguration;
@@ -354,14 +358,33 @@ export const FirstPersonCameraRig: React.FC<FirstPersonCameraRigProps> = ({
     };
   }, [gl, entranceComplete, viewMode]);
 
+  const syncAudioListener = () => {
+    if (!cinemaAudioEngine.initialized) return;
+    _listenerFwd.set(0, 0, -1).applyQuaternion(camera.quaternion);
+    _listenerUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
+    cinemaAudioEngine.updateListenerPose(
+      camera.position.x,
+      camera.position.y,
+      camera.position.z,
+      _listenerFwd.x,
+      _listenerFwd.y,
+      _listenerFwd.z,
+      _listenerUp.x,
+      _listenerUp.y,
+      _listenerUp.z,
+    );
+  };
+
   useFrame(({ clock }, delta) => {
     if (!entranceComplete) {
       clampInsideHall(camera.position, config);
+      syncAudioListener();
       return;
     }
 
     if (viewMode === 'hall' || isGlidingRef.current) {
       clampInsideHall(camera.position, config);
+      syncAudioListener();
       return;
     }
 
@@ -409,6 +432,7 @@ export const FirstPersonCameraRig: React.FC<FirstPersonCameraRigProps> = ({
       offsetEulerRef.current.set(swayPitch * 0.45, 0, swayRoll * 0.45, 'YXZ');
       offsetQuatRef.current.setFromEuler(offsetEulerRef.current);
       camera.quaternion.copy(screenFullQuatRef.current).multiply(offsetQuatRef.current);
+      syncAudioListener();
       return;
     }
 
@@ -428,6 +452,7 @@ export const FirstPersonCameraRig: React.FC<FirstPersonCameraRigProps> = ({
     const finalYaw = baseAnglesRef.current.yaw + look.yaw;
     lookEulerRef.current.set(finalPitch, finalYaw, swayRoll, 'YXZ');
     camera.quaternion.setFromEuler(lookEulerRef.current);
+    syncAudioListener();
   });
 
   if (entranceComplete && viewMode === 'hall' && !isGlidingRef.current) {

@@ -199,10 +199,18 @@ export const VirtualCinemaPage: React.FC = () => {
     const seatOffsetRatio =
       seat.worldPosition[0] / Math.max(1, selectedTheaterConfig.auditoriumWidth / 2);
     cinemaAudioEngine
-      .initialize(selectedTheaterConfig.audioProfile, seatOffsetRatio)
+      .initialize(selectedTheaterConfig.audioProfile, seatOffsetRatio, selectedTheaterConfig)
       .then(() => {
         if (deckARef.current) cinemaAudioEngine.attachVideoElement(deckARef.current);
         if (deckBRef.current) cinemaAudioEngine.attachVideoElement(deckBRef.current);
+        cinemaAudioEngine.updateMix(
+          audioSettings,
+          showState,
+          Boolean(selectedTheaterConfig.supports4dxEffects) &&
+            fourDxSettings.enabled &&
+            fourDxSettings.windAudioEnabled,
+          fourDxSettings.vibrationIntensity,
+        );
       })
       .catch(() => {});
   }, [selectedTheaterConfig]);
@@ -333,7 +341,11 @@ export const VirtualCinemaPage: React.FC = () => {
           const seatOffsetRatio =
             seat.worldPosition[0] /
             Math.max(1, selectedTheaterConfig.auditoriumWidth / 2);
-          await cinemaAudioEngine.initialize(selectedTheaterConfig.audioProfile, seatOffsetRatio);
+          await cinemaAudioEngine.initialize(
+            selectedTheaterConfig.audioProfile,
+            seatOffsetRatio,
+            selectedTheaterConfig,
+          );
           cinemaAudioEngine.attachVideoElement(activeEl);
           cinemaAudioEngine.attachVideoElement(standbyEl);
           cinemaAudioEngine.fadeInVideo(0.65, videoVolumeRef.current);
@@ -727,7 +739,11 @@ export const VirtualCinemaPage: React.FC = () => {
       const seatOffsetRatio =
         selectedSeat.worldPosition[0] /
         Math.max(1, selectedTheaterConfig.auditoriumWidth / 2);
-      await cinemaAudioEngine.initialize(selectedTheaterConfig.audioProfile, seatOffsetRatio);
+      await cinemaAudioEngine.initialize(
+        selectedTheaterConfig.audioProfile,
+        seatOffsetRatio,
+        selectedTheaterConfig,
+      );
       cinemaAudioEngine.attachVideoElement(vid);
       await vid.play();
       setAutoplayBlocked(false);
@@ -1130,6 +1146,17 @@ export const VirtualCinemaPage: React.FC = () => {
                   className="w-full accent-[#D4AF37] cursor-pointer"
                 />
               </div>
+              <label className="flex items-center justify-between border-t border-white/10 pt-2.5 text-xs text-neutral-300 cursor-pointer">
+                <span>Dolby 3D Spatial Audio</span>
+                <input
+                  type="checkbox"
+                  checked={audioSettings.spatialSimulation}
+                  onChange={(e) =>
+                    updateAudioSettings({ spatialSimulation: e.target.checked })
+                  }
+                  className="h-4 w-4 accent-[#D4AF37]"
+                />
+              </label>
               {selectedTheaterConfig.supports4dxEffects && (
                 <div>
                   <div className="flex justify-between text-neutral-300 mb-1">
