@@ -1,0 +1,1399 @@
+# MASTER PROJECT PROMPT — IMMERSIVE 3D VIRTUAL CINEMA EXPERIENCE
+
+## PROJECT OVERVIEW
+
+Build a complete, premium, realistic, interactive 3D Virtual Cinema Website.
+
+The website allows users to enter a virtual cinema, select their preferred theater category, choose their exact seat, upload their own videos, arrange their video playlist, and experience watching those videos inside a realistic 3D cinema auditorium.
+
+This is NOT a traditional movie-ticket booking website.
+
+This is an interactive virtual cinema platform where users experience their uploaded videos inside a realistic virtual theater.
+
+The most important objective is to make users feel as though they are physically sitting inside a real cinema auditorium.
+
+The website must have multiple cinema categories, and every category must have its own unique architecture, screen dimensions, seating arrangement, lighting, materials, atmosphere, and audio experience.
+
+Build the entire project as one connected application.
+
+---
+
+# 1. STRICT PROJECT REQUIREMENTS
+
+Follow these requirements throughout the entire project.
+
+### Database and API restrictions
+
+- Do NOT use any database.
+- Do NOT use MongoDB.
+- Do NOT use Firebase.
+- Do NOT use Supabase.
+- Do NOT use PostgreSQL.
+- Do NOT use MySQL.
+- Do NOT use any external database service.
+- Do NOT use any API keys.
+- Do NOT use OpenAI APIs.
+- Do NOT use Gemini APIs.
+- Do NOT use external AI APIs.
+- Do NOT require API authentication.
+- Do NOT require paid third-party services.
+- Do NOT require cloud storage.
+- Do NOT require external video hosting.
+
+Everything must work locally within the browser.
+
+Use:
+- React state.
+- Zustand or Context API.
+- LocalStorage for small application preferences and settings.
+- IndexedDB for optional locally persisted user data and video blobs.
+- Browser File API for video uploads.
+- URL.createObjectURL for local video playback.
+- Three.js for 3D rendering.
+- Web Audio API for audio processing.
+
+Do not store large video files in LocalStorage.
+
+Video files must remain local to the browser unless the user explicitly downloads or exports them.
+
+No login or signup pages.
+
+No payment gateway.
+
+No subscription system.
+
+No fake backend.
+
+No mock API responses.
+
+Do not show fake upload progress or pretend files have been uploaded when they have not.
+
+### Main requirement
+
+Every feature must be genuinely interactive and functional.
+
+Do not create a website that only looks good in screenshots.
+
+---
+
+# 2. TECHNOLOGY STACK
+
+Use the following technologies:
+
+Frontend:
+- React.js
+- TypeScript
+- Vite
+- HTML5
+- CSS3
+- JavaScript/TypeScript
+
+3D:
+- Three.js
+- React Three Fiber
+- @react-three/drei
+- WebGL
+
+Animations:
+- GSAP
+- Framer Motion where appropriate
+
+State:
+- Zustand
+
+Media:
+- HTML5 Video API
+- Web Audio API
+- Browser File API
+- IndexedDB
+
+Icons:
+- Lucide React
+
+Styling:
+- Custom CSS
+- CSS Grid
+- Flexbox
+- Responsive layouts
+
+Do not use Bootstrap or generic template styling.
+
+Use professional component-based architecture.
+
+Use locally bundled assets wherever possible.
+
+Do not make external services a requirement for the website to function.
+
+---
+
+# 3. WEBSITE DESIGN DIRECTION
+
+The website must look premium, professional, cinematic, and immersive.
+
+Visual direction:
+
+- Luxury cinema atmosphere.
+- Deep black and charcoal surfaces.
+- Subtle dark gradients.
+- Elegant typography.
+- Premium gold or champagne accents.
+- Realistic cinema photography and 3D environments.
+- Smooth cinematic transitions.
+- High-quality hover interactions.
+- Professional spacing and alignment.
+- Beautiful loading animations.
+
+Avoid:
+- Basic dashboard appearance.
+- Generic website templates.
+- Excessive cards.
+- Excessive text.
+- Cartoon-style theater environments.
+- Flat-looking 3D models.
+- Unnecessary buttons.
+- Cluttered layouts.
+
+Use a cinematic visual identity throughout the application.
+
+The website should be responsive.
+
+Desktop should provide the best full 3D cinema experience.
+
+Mobile should provide an optimized experience with appropriate controls.
+
+---
+
+# 4. THEATER CATEGORIES
+
+Create six different theater categories.
+
+Each theater must have a genuinely different 3D auditorium.
+
+Never reuse one identical auditorium for all categories.
+
+## THEATER 01 — STANDARD 2D CINEMA
+
+Design:
+- Traditional cinema auditorium.
+- Large rectangular cinema screen.
+- Traditional red cushioned seats.
+- Multiple seating rows.
+- Side walls.
+- Ceiling architecture.
+- Carpeted floor.
+- Front speaker areas.
+- Staircases and aisles.
+- Realistic architectural lighting.
+
+Screen:
+- Standard rectangular screen.
+- Appropriate screen proportions.
+- Correct position at the front.
+
+Seats:
+- Standard cinema chairs.
+- Comfortable visual design.
+- Consistent spacing.
+
+Lighting:
+- Warm ceiling lights.
+- Subtle wall lights.
+- Dim aisle lights.
+- Small step lights.
+
+Atmosphere:
+- Traditional movie theater ambience.
+
+## THEATER 02 — IMAX CINEMA
+
+Design:
+- Large premium auditorium.
+- Massive curved cinema screen.
+- Wide viewing area.
+- Steep stadium-style seating.
+- Large architectural ceiling.
+- Premium dark interior.
+- Blue architectural accent lighting.
+- Detailed walls and flooring.
+
+Screen:
+- Much larger than the standard 2D screen.
+- Curved screen geometry.
+- Wide immersive proportions.
+
+Seats:
+- Stadium-style arrangement.
+- Proper viewing angles.
+- Higher rear rows.
+
+Atmosphere:
+- Grand and immersive.
+
+Audio:
+- Simulated spatial cinema audio.
+
+## THEATER 03 — 4DX CINEMA
+
+Design:
+- Futuristic cinema environment.
+- Premium motion-style chairs.
+- Individual seat details.
+- Futuristic side walls.
+- Modern ceiling architecture.
+- Dynamic environmental lighting.
+
+Seats:
+- Motion-style seats.
+- Visible armrests.
+- Detailed headrests.
+- Individual seat structures.
+
+Special effects:
+- Optional simulated vibration.
+- Optional subtle camera motion.
+- Simulated environmental effects.
+- Optional wind-like audio.
+
+All effects must be optional.
+
+Do not pretend a browser can physically operate real-world motion seats.
+
+## THEATER 04 — DOLBY CINEMA
+
+Design:
+- Luxury black auditorium.
+- Premium reclining leather seats.
+- Minimal architectural lighting.
+- Dark walls.
+- Premium floor materials.
+- Sophisticated ceiling.
+- Large premium cinema screen.
+
+Screen:
+- Premium high-contrast appearance.
+- Correct cinema proportions.
+
+Seats:
+- Large leather reclining chairs.
+- Premium spacing.
+- Detailed materials.
+
+Atmosphere:
+- Luxury cinema experience.
+
+Audio:
+- Spatial sound simulation using Web Audio API.
+
+Do not claim official Dolby certification or actual Dolby Atmos output.
+
+## THEATER 05 — REALD 3D CINEMA
+
+Design:
+- Dedicated 3D cinema environment.
+- Large cinema screen.
+- Traditional 3D cinema seating.
+- Modern auditorium architecture.
+- Subtle blue and purple lighting.
+
+Screen:
+- Appropriate 3D theater dimensions.
+
+Experience:
+- Create a dedicated stereoscopic presentation mode only where technically supported.
+- Provide a normal playback fallback.
+
+Do not simply call ordinary video playback true stereoscopic 3D.
+
+## THEATER 06 — PRIVATE LUXURY CINEMA
+
+Design:
+- Small exclusive cinema auditorium.
+- Premium leather recliners.
+- Spacious seating.
+- Luxury wall panels.
+- Warm indirect lighting.
+- Detailed ceiling design.
+- Premium flooring.
+- Exclusive private atmosphere.
+
+Screen:
+- Large screen relative to auditorium size.
+
+Seats:
+- Individual luxury recliners.
+- Smaller seating capacity.
+
+Atmosphere:
+- Private home cinema meets luxury commercial theater.
+
+---
+
+# 5. HOME PAGE
+
+Create a premium cinematic landing page.
+
+### Navigation bar
+
+Include:
+- Brand logo.
+- Home.
+- Explore Theaters.
+- About Experience.
+- Settings.
+
+Keep navigation minimal.
+
+### Hero section
+
+Create an immersive full-width hero.
+
+Use:
+- Realistic cinema auditorium imagery or an interactive 3D preview.
+- Large heading: "YOUR CINEMA. YOUR SEAT. YOUR EXPERIENCE."
+- Supporting text describing the virtual cinema.
+- Primary CTA: ENTER THE CINEMA.
+- Secondary CTA: EXPLORE THEATERS.
+
+Add:
+- Cinematic entrance animation.
+- Smooth text animations.
+- Premium visual effects.
+- Subtle background movement.
+
+### Theater exploration section
+
+Show all six categories.
+
+Every theater card should include:
+- Individual theater image.
+- Theater name.
+- Short description.
+- Unique visual identity.
+- Explore button.
+
+When a user clicks a theater, open its detailed theater page.
+
+### How it works section
+
+Show these steps visually:
+
+1. Choose your theater.
+2. Select your seat.
+3. Upload your videos.
+4. Arrange your playlist.
+5. Enter the 3D auditorium.
+6. Enjoy your private cinema experience.
+
+### Footer
+
+Include:
+- Brand identity.
+- Basic navigation.
+- About.
+- Privacy information.
+- Local processing information.
+
+Do not include unnecessary login, registration, subscription, or payment sections.
+
+---
+
+# 6. THEATER DETAILS PAGE
+
+When the user selects a theater category, show a detailed preview page.
+
+Include:
+- Large theater preview image.
+- Theater description.
+- 3D preview where possible.
+- Screen size information.
+- Seating capacity.
+- Seating arrangement.
+- Audio experience description.
+- Lighting style.
+- Unique theater features.
+
+Display a prominent button:
+
+"SELECT YOUR SEAT"
+
+Each theater must use its own configuration.
+
+Create a configuration-driven architecture.
+
+For example:
+
+TheaterConfiguration:
+- theaterId
+- theaterName
+- category
+- auditoriumWidth
+- auditoriumLength
+- auditoriumHeight
+- screenWidth
+- screenHeight
+- screenCurvature
+- screenPosition
+- seatingRows
+- seatsPerRow
+- seatSpacing
+- rowSpacing
+- seatModel
+- lightingProfile
+- audioProfile
+- environmentProfile
+
+All configurations must be real application data, not decorative text.
+
+---
+
+# 7. 2D SEAT SELECTION SYSTEM
+
+Build a fully functional interactive 2D cinema seating map.
+
+This is one of the most important features.
+
+The seat map must change according to the selected theater.
+
+Do not show the same seat arrangement for all theater categories.
+
+### Seat map layout
+
+Display:
+- Cinema screen at the top.
+- Screen direction.
+- Row labels.
+- Seat numbers.
+- Aisles.
+- Premium seating areas.
+- Accessible seating indicators where appropriate.
+
+Create different arrangements for different theaters.
+
+Initial prototype capacities:
+
+2D:
+- 12 rows.
+- 16 seats per row.
+
+IMAX:
+- 15 rows.
+- 20 seats per row.
+
+4DX:
+- 10 rows.
+- 14 seats per row.
+
+Dolby:
+- 12 rows.
+- 14 seats per row.
+
+3D:
+- 12 rows.
+- 16 seats per row.
+
+Private:
+- 4 rows.
+- 5 seats per row.
+
+These are virtual prototype layouts and must be configurable.
+
+### Seat interaction
+
+Seat statuses:
+
+- Green: Available.
+- Red: Selected.
+- Grey: Unavailable.
+- Gold: Premium.
+
+Interactions:
+- Hover over seats.
+- Display row and seat number.
+- Click to select.
+- Click again to deselect.
+- Highlight the selected seat.
+- Display selected seat details.
+
+For the first version, allow one seat selection.
+
+Add a Continue button.
+
+Do not allow continuing without selecting a seat.
+
+### Most important seat synchronization requirement
+
+Every seat must have:
+- Unique seat ID.
+- Row number.
+- Seat number.
+- 2D map position.
+- 3D world position.
+- Viewing direction.
+- Associated theater ID.
+
+Example:
+
+Selected seat: G8.
+
+When the user enters the 3D auditorium, the camera must move to the exact position associated with seat G8.
+
+The 2D seat map and 3D auditorium must use the same seat configuration.
+
+Do not calculate a random camera position.
+
+Do not place the user in a different seat.
+
+---
+
+# 8. VIDEO UPLOAD PAGE
+
+After seat selection, navigate to a dedicated video upload page.
+
+Design this page professionally.
+
+Heading:
+
+"CREATE YOUR CINEMA PLAYLIST"
+
+Supporting text:
+
+"Bring your own videos and enjoy them on the big screen."
+
+Display two large selection options.
+
+## OPTION A — WITHOUT ADS
+
+Description:
+
+"Enjoy one uninterrupted video in your private cinema."
+
+Requirements:
+- Allow exactly ONE video.
+- Support MP4 and WebM initially.
+- Display actual video preview.
+- Show filename.
+- Show file size.
+- Show video duration when available.
+- Allow replacing the video.
+- Allow removing the video.
+
+Do not allow multiple videos in this mode.
+
+## OPTION B — WITH ADS
+
+Description:
+
+"Create your own cinema playlist with multiple videos."
+
+Requirements:
+- Allow multiple videos.
+- Support MP4 and WebM initially.
+- Display uploaded video list.
+- Display thumbnails where available.
+- Display filenames.
+- Display durations.
+- Display file sizes.
+- Allow video removal.
+- Allow video replacement.
+- Allow preview.
+- Allow playlist reordering.
+
+### Playlist ordering
+
+Users must control the playback sequence.
+
+Implement drag-and-drop playlist management.
+
+Example:
+
+01 — Advertisement One
+
+02 — Advertisement Two
+
+03 — Main Video One
+
+04 — Main Video Two
+
+The actual playback engine must follow this exact sequence.
+
+Do not automatically rearrange uploaded videos.
+
+### Upload interaction
+
+Support:
+- Drag and drop.
+- File picker.
+- Multiple file selection in With Ads mode.
+- Real upload/processing feedback.
+- File validation.
+- Invalid format errors.
+- File size errors.
+- Browser memory handling.
+
+Since there is no backend, video files must remain in browser-managed local storage or IndexedDB.
+
+Use object URLs for playback.
+
+Handle object URL cleanup properly.
+
+Do not use fake upload progress.
+
+### Playback duration
+
+Calculate the total playlist duration from actual loaded video metadata.
+
+Display the estimated total show duration.
+
+---
+
+# 9. VIDEO PREVIEW AND CONFIRMATION PAGE
+
+After uploading videos, navigate to a confirmation page.
+
+Show:
+
+- Selected theater.
+- Theater category.
+- Selected seat.
+- Video mode.
+- Uploaded videos.
+- Playlist sequence.
+- Total video duration.
+- File details.
+
+Provide:
+- Back to Upload.
+- Change Seat.
+- Confirm and Enter Theater.
+
+When the user confirms, initialize the 3D cinema experience.
+
+Keep all selected state intact.
+
+---
+
+# 10. 3D CINEMA ENVIRONMENT
+
+THIS IS THE MOST IMPORTANT PART OF THE ENTIRE PROJECT.
+
+Build a realistic 3D cinema using Three.js and React Three Fiber.
+
+The 3D environment must be a real interactive 3D scene.
+
+Do not create a flat image pretending to be 3D.
+
+Do not use a static theater background.
+
+Do not create a simple room made from a few cubes.
+
+Create a detailed auditorium.
+
+### 3D environment components
+
+Include:
+
+1. Auditorium floor.
+2. Side walls.
+3. Back wall.
+4. Ceiling.
+5. Cinema entrance.
+6. Emergency exit doors.
+7. Main screen.
+8. Screen frame.
+9. Screen wall.
+10. Cinema seats.
+11. Seat armrests.
+12. Headrests.
+13. Seat bases.
+14. Seat rows.
+15. Staircases.
+16. Side aisles.
+17. Step lighting.
+18. Wall lighting.
+19. Ceiling lighting.
+20. Speaker structures.
+21. Acoustic wall panels.
+22. Decorative architecture.
+23. Realistic materials.
+24. Shadows.
+25. Ambient illumination.
+
+Use:
+- Physically based materials.
+- Appropriate roughness.
+- Metalness where necessary.
+- Realistic fabric materials.
+- Leather materials for premium seats.
+- Realistic floor materials.
+- Detailed screen surfaces.
+
+The theater must look believable from the seated camera position.
+
+Use optimized geometry and textures.
+
+---
+
+# 11. THEATER SCREEN DIMENSIONS
+
+The screen must be different for every category.
+
+Do not use one universal screen size.
+
+Use configuration-driven dimensions.
+
+Standard 2D:
+- Standard wide rectangular screen.
+
+IMAX:
+- Extremely wide, large curved screen.
+- Taller screen proportions.
+
+4DX:
+- Large immersive screen.
+
+Dolby:
+- Premium wide screen.
+
+RealD 3D:
+- Large screen suitable for stereoscopic presentation.
+
+Private:
+- Large screen relative to the smaller room.
+
+The screen must be physically positioned at the front of the auditorium.
+
+Correct the screen viewing angle based on the selected seat.
+
+Avoid screen stretching.
+
+Preserve the actual video's aspect ratio.
+
+Support letterboxing or pillarboxing when required.
+
+---
+
+# 12. FIRST-PERSON CAMERA SYSTEM
+
+Implement a realistic first-person entrance sequence.
+
+After confirmation:
+
+### Entrance sequence
+
+1. Fade from the confirmation page.
+2. Load the selected 3D theater.
+3. Start the camera at the auditorium entrance.
+4. Show the entire illuminated auditorium.
+5. Move the camera through the aisle.
+6. Navigate toward the selected seat.
+7. Stop at the exact 3D seat coordinates.
+8. Animate the final movement into a natural seated position.
+9. Point the camera toward the cinema screen.
+
+Use smooth interpolation and GSAP where appropriate.
+
+Avoid sudden camera jumps.
+
+The user must feel as though they are walking into a real cinema.
+
+### Seated camera
+
+After reaching the seat:
+- Set the camera at realistic seated eye height.
+- Point toward the center of the screen.
+- Use natural field of view.
+- Allow limited mouse movement.
+- Prevent movement through geometry.
+- Provide a Reset View option.
+
+The camera must remain at the selected seat.
+
+---
+
+# 13. CINEMA LIGHTING AUTOMATION
+
+Create a dedicated lighting controller.
+
+Lighting must change automatically according to show state.
+
+Implement the following four states.
+
+## STATE 1 — AUDITORIUM OPEN
+
+Before the show starts:
+
+- Main lights ON.
+- Ceiling lights ON.
+- Wall lights ON.
+- Aisle lights ON.
+- Step lights ON.
+- Screen dim.
+- Seats clearly visible.
+
+The user must be able to see the auditorium properly.
+
+## STATE 2 — SHOW STARTING
+
+Before the first video:
+
+- Begin a smooth cinematic transition.
+- Gradually reduce ceiling light intensity.
+- Fade out main lights.
+- Reduce wall lights.
+- Increase screen brightness.
+- Keep step lighting visible.
+
+## STATE 3 — SHOW PLAYING
+
+While videos are playing:
+
+- Main lights OFF.
+- Ceiling lights OFF.
+- Wall lights OFF or nearly OFF.
+- Aisle lighting very dim.
+- Step lights very dim.
+- Screen ON.
+- Screen light softly illuminates nearby seats and walls.
+
+Step lighting must be subtle.
+
+Do not make the auditorium completely black.
+
+The remaining lights must not disturb the screen viewing experience.
+
+## STATE 4 — SHOW COMPLETED
+
+After the final video:
+
+- Fade out the screen.
+- Stop the playlist.
+- Gradually turn on aisle lights.
+- Turn on wall lights.
+- Turn on ceiling lights.
+- Turn on main lights.
+- Restore the complete auditorium lighting.
+
+Use smooth transitions.
+
+Do not use instant on/off switching.
+
+Lighting profiles must be configurable for every theater category.
+
+---
+
+# 14. ACTUAL VIDEO PLAYBACK ON THE 3D SCREEN
+
+The user-uploaded video must appear on the physical 3D cinema screen.
+
+This is mandatory.
+
+Use:
+- HTMLVideoElement.
+- THREE.VideoTexture.
+- Three.js material mapping.
+
+The actual uploaded file must be used.
+
+Do not display:
+- Placeholder video.
+- Random internet video.
+- Static screenshot.
+- Fake video animation.
+
+### Playback system
+
+When the show begins:
+
+1. Load the first playlist video.
+2. Attach the video texture to the 3D screen material.
+3. Start playback after explicit user interaction.
+4. Display the video correctly.
+5. Play its audio.
+6. Monitor its playback status.
+7. Detect its ended event.
+8. Load the next video automatically.
+9. Update playlist progress.
+10. Continue until all videos finish.
+
+### Playback controls
+
+Provide:
+- Pause.
+- Resume.
+- Restart.
+- Volume control.
+- Mute.
+- Current video progress.
+- Current playlist item.
+- Fullscreen.
+
+Keep controls minimal and cinematic.
+
+Provide an option to hide the playback controls.
+
+### Playlist handling
+
+For With Ads mode:
+- Follow the user's exact playlist order.
+- Do not skip videos.
+- Do not repeat videos automatically.
+- Continue to the next video after the current video ends.
+
+For Without Ads mode:
+- Play the single uploaded video.
+- When it ends, trigger show completion.
+
+Handle:
+- Unsupported formats.
+- Corrupted files.
+- Playback errors.
+- Browser autoplay restrictions.
+- Missing media.
+- Video loading errors.
+
+Do not allow the show to continue silently pretending that playback succeeded.
+
+---
+
+# 15. AUDIO AND CINEMA ATMOSPHERE
+
+Use the Web Audio API.
+
+Create separate audio controls for:
+
+- Video audio.
+- Theater ambience.
+- Environmental effects.
+
+Implement:
+- Master volume.
+- Mute.
+- Audio fade-in.
+- Audio fade-out.
+- Stereo positioning.
+- Spatial audio simulation where possible.
+- Subtle room ambience.
+- Appropriate volume levels.
+
+Before show:
+- Very subtle auditorium ambience.
+
+During show:
+- Prioritize the uploaded video's audio.
+- Avoid unnecessary environmental sounds.
+
+After show:
+- Fade out video audio.
+- Restore subtle auditorium ambience.
+
+Use actual uploaded video audio.
+
+Do not falsely claim physical surround speakers or Dolby Atmos certification.
+
+---
+
+# 16. 4DX EFFECT SIMULATION
+
+For 4DX theaters, implement optional simulated effects.
+
+Examples:
+- Subtle seat vibration animation.
+- Slight camera movement.
+- Wind-like audio effects.
+- Optional visual atmospheric effects.
+- Dynamic environmental lighting.
+
+Provide effect intensity settings.
+
+All effects should be disabled or conservative by default.
+
+These are virtual browser simulations only.
+
+Do not claim physical seat motion or physical environmental hardware control.
+
+---
+
+# 17. CINEMA SHOW USER INTERFACE
+
+During the show, the interface should be almost invisible.
+
+The user should primarily see the cinema screen and theater environment.
+
+Include:
+- Minimal pause button.
+- Minimal volume control.
+- Fullscreen option.
+- Hide controls.
+- Exit show option.
+
+Controls should appear on user interaction and fade away when inactive.
+
+Do not place large UI panels over the screen.
+
+Provide a clear exit confirmation before leaving the show.
+
+---
+
+# 18. SHOW COMPLETION AND RETURN HOME
+
+After the final video finishes:
+
+1. Detect playlist completion.
+2. Stop all playback.
+3. Fade out video audio.
+4. Fade out the cinema screen.
+5. Turn on auditorium lights.
+6. Show a cinematic completion animation.
+7. Display "YOUR SHOW HAS ENDED".
+8. Display a Return Home button.
+
+When the user clicks Return Home:
+
+- Animate the camera away from the seat.
+- Fade the auditorium.
+- Transition to the home page.
+- Release video resources.
+- Stop audio nodes.
+- Dispose of 3D resources.
+- Clean up temporary object URLs when no longer needed.
+- Reset temporary show state.
+
+The user should return to the original home page with a smooth cinematic transition.
+
+---
+
+# 19. APPLICATION STATE MANAGEMENT
+
+Use Zustand.
+
+Maintain a shared state throughout the complete application.
+
+Store:
+
+- Selected theater ID.
+- Selected theater configuration.
+- Selected seat ID.
+- Selected seat coordinates.
+- Video mode.
+- Uploaded video references.
+- Playlist order.
+- Video metadata.
+- Current playback index.
+- Playback status.
+- Lighting status.
+- Audio settings.
+- Show completion status.
+
+Do not lose state when navigating between pages.
+
+Use IndexedDB for optional local persistence.
+
+Do not put video blobs into LocalStorage.
+
+Handle browser refreshes carefully.
+
+If the uploaded videos are no longer available, show a proper recovery message and request re-selection.
+
+---
+
+# 20. PROJECT STRUCTURE
+
+Use a clean and modular structure similar to:
+
+src/
+  assets/
+    images/
+    models/
+    textures/
+    audio/
+
+  components/
+    common/
+    navigation/
+    theater/
+    seating/
+    upload/
+    playlist/
+    player/
+    cinema3d/
+    lighting/
+    audio/
+
+  pages/
+    Home/
+    TheaterSelection/
+    TheaterDetails/
+    SeatSelection/
+    VideoUpload/
+    Confirmation/
+    VirtualCinema/
+
+  config/
+    theaters/
+    seating/
+
+  three/
+    scenes/
+    models/
+    cameras/
+    materials/
+    lighting/
+    effects/
+
+  services/
+    media/
+    storage/
+    playback/
+
+  store/
+    cinemaStore.ts
+
+  hooks/
+
+  utils/
+
+  styles/
+
+  types/
+
+Do not place all application logic inside App.tsx.
+
+Keep 3D rendering, camera control, playback, lighting and upload functionality separate.
+
+---
+
+# 21. PERFORMANCE OPTIMIZATION
+
+The website must run smoothly.
+
+Requirements:
+
+- Load only the selected theater environment.
+- Lazy-load theater assets.
+- Optimize 3D geometry.
+- Optimize textures.
+- Use appropriate shadow quality.
+- Avoid excessive real-time lights.
+- Use instanced rendering for repeated seats where appropriate.
+- Dispose of unused Three.js resources.
+- Dispose of video textures.
+- Clean up audio nodes.
+- Clean up object URLs.
+- Avoid unnecessary state updates.
+- Avoid memory leaks.
+- Show loading indicators while loading 3D environments.
+
+Provide graphics settings:
+
+- Low.
+- Medium.
+- High.
+
+Use device capability detection to select a sensible default.
+
+Desktop is the primary target.
+
+Mobile should use simplified 3D rendering and touch-friendly controls.
+
+---
+
+# 22. BROWSER COMPATIBILITY
+
+Target modern desktop browsers:
+
+- Google Chrome.
+- Microsoft Edge.
+- Firefox.
+- Safari where supported.
+
+Handle:
+- WebGL availability.
+- Video playback support.
+- Fullscreen permissions.
+- Browser autoplay restrictions.
+- Local file permissions.
+- IndexedDB limitations.
+
+If WebGL is unavailable, display a clear fallback message rather than a broken page.
+
+---
+
+# 23. ERROR HANDLING
+
+Implement proper error states for:
+
+- Invalid video format.
+- File too large.
+- Video metadata loading failure.
+- Video playback failure.
+- IndexedDB unavailable.
+- WebGL unavailable.
+- 3D environment loading failure.
+- Missing theater configuration.
+- Missing seat coordinates.
+- Camera positioning failure.
+- Browser memory limitations.
+
+Never silently fail.
+
+Show useful error messages and recovery options.
+
+---
+
+# 24. RESPONSIVE DESIGN
+
+Desktop:
+- Full immersive 3D theater.
+- Large seating map.
+- Large video previews.
+- Professional navigation.
+
+Tablet:
+- Responsive theater cards.
+- Adapted seating map.
+- Touch-friendly upload controls.
+- Optimized 3D rendering.
+
+Mobile:
+- Compact navigation.
+- Vertical theater cards.
+- Scrollable seat map.
+- Touch-based interactions.
+- Optimized virtual cinema.
+- Fullscreen video experience where supported.
+
+Do not simply shrink the desktop interface.
+
+---
+
+# 25. FINAL TESTING REQUIREMENTS
+
+Before declaring the project complete, test the following complete workflow.
+
+TEST 1:
+Open home page and select Standard 2D Cinema.
+
+TEST 2:
+Open its seating map and select seat G8.
+
+TEST 3:
+Continue to video upload.
+
+TEST 4:
+Select Without Ads.
+
+TEST 5:
+Upload one actual local MP4 video.
+
+TEST 6:
+Open confirmation page.
+
+TEST 7:
+Verify theater, seat and uploaded video information.
+
+TEST 8:
+Click Confirm and Enter Theater.
+
+TEST 9:
+Load the correct 3D 2D auditorium.
+
+TEST 10:
+Verify the camera moves to the exact 3D position associated with seat G8.
+
+TEST 11:
+Verify the auditorium starts with all lights illuminated.
+
+TEST 12:
+Verify lights gradually dim.
+
+TEST 13:
+Verify the actual uploaded video appears on the 3D cinema screen.
+
+TEST 14:
+Verify the video audio works.
+
+TEST 15:
+Verify playback controls.
+
+TEST 16:
+Verify video completion.
+
+TEST 17:
+Verify the lights turn on again.
+
+TEST 18:
+Verify the Show Completed screen.
+
+TEST 19:
+Return to home page.
+
+TEST 20:
+Repeat the process with With Ads mode and at least three videos, verifying the exact playlist order.
+
+Also test all six theater configurations independently.
+
+---
+
+# 26. DEVELOPMENT EXECUTION INSTRUCTIONS
+
+Do not generate only the home page.
+
+Do not stop after designing the user interface.
+
+Build the entire connected project.
+
+Implement the actual functionality behind every major button.
+
+Prioritize a complete working application over decorative elements.
+
+Use original procedural 3D models and locally available assets where possible.
+
+If external assets are needed, use properly licensed downloadable assets and include them locally in the project.
+
+Do not make the application dependent on paid services or API keys.
+
+Do not invent successful results.
+
+If something is not implemented, clearly identify it rather than displaying a fake success state.
+
+Build in logical implementation stages:
+
+1. Project setup and design system.
+2. Complete home page.
+3. Six theater configurations.
+4. Theater selection.
+5. Interactive 2D seat maps.
+6. Video upload system.
+7. Playlist management.
+8. Confirmation system.
+9. Standard 2D 3D auditorium.
+10. Seat-to-camera synchronization.
+11. Lighting controller.
+12. Video texture playback.
+13. Audio controller.
+14. Show completion.
+15. Remaining five individual theater environments.
+16. Performance optimization.
+17. Full end-to-end testing.
+
+Keep all existing implemented functionality intact when adding subsequent features.
+
+After each stage, verify that the previous stages still work.
+
+If the output becomes too large, continue implementing the project in subsequent steps without replacing the working code with a simplified version.
+
+---
+
+# FINAL EXPECTATION
+
+The finished result must be a complete browser-based virtual cinema.
+
+A user must be able to select a theater, choose a seat, upload their own videos, arrange a playlist, enter the 3D theater, sit in their selected seat, watch actual videos on the theater screen, experience automatic cinematic lighting, hear the video audio and return home after the show.
+
+The six theater categories must feel like six different cinema environments.
+
+The project must be functional without a database, API keys, external AI services, payment services or cloud video storage.
+
+The priority is REALISTIC 3D, ACTUAL VIDEO PLAYBACK, CORRECT SEAT POSITIONING, DIFFERENT THEATER ARCHITECTURE and A COMPLETE CINEMA EXPERIENCE.
+
+Do not compromise these core requirements just to finish the visual design quickly.

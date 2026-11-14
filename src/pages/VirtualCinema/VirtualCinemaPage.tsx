@@ -1,0 +1,1484 @@
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+  AlertTriangle,
+  Armchair,
+  Compass,
+  Eye,
+  EyeOff,
+  Home,
+  LogOut,
+  Maximize,
+  Maximize2,
+  Minimize,
+  Monitor,
+  Pause,
+  Play,
+  RotateCcw,
+  Sliders,
+  Sparkles,
+  Volume2,
+  VolumeX,
+} from 'lucide-react';
+import { useCinemaStore } from '../../store/cinemaStore';
+import { CinemaAuditoriumCanvas } from '../../three/scenes/CinemaAuditoriumCanvas';
+import { cinemaAudioEngine } from '../../services/audio/cinemaAudioEngine';
+import { formatDuration } from '../../utils/formatters';
+import { CameraViewMode } from '../../types/cinema';
+
+export const VirtualCinemaPage: React.FC = () => {
+  const {
+    selectedTheaterConfig,
+    theaterSeats,
+    selectedSeat,
+    selectSeat,
+    playlist,
+    currentPlaybackIndex,
+    setCurrentPlaybackIndex,
+    showState,
+    setShowState,
+    isPaused,
+    setIsPaused,
+    showCompleted,
+    setShowCompleted,
+    graphicsQuality,
+    audioSettings,
+    updateAudioSettings,
+    fourDxSettings,
+    updateFourDxSettings,
+    screenReflectionBrightness,
+    setScreenReflectionBrightness,
+    screenFraming,
+    setScreenFraming,
+    resetShowSession,
+    navigate,
+  } = useCinemaStore();
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const videoHostRef = useRef<HTMLDivElement>(null);
+
+  // Dual-Deck persistent HTMLVideoElements mounted in DOM for continuous hardware decoding
+  const deckARef = useRef<HTMLVideoElement | null>(null);
+  const deckBRef = useRef<HTMLVideoElement | null>(null);
+  const [deckAEl, setDeckAEl] = useState<HTMLVideoElement | null>(null);
+  const [deckBEl, setDeckBEl] = useState<HTMLVideoElement | null>(null);
+  const [activeDeck, setActiveDeck] = useState<'A' | 'B'>('A');
+  const loadedUrlRef = useRef<{ A: string; B: string }>({ A: '', B: '' });
+  const advancingForIndexRef = useRef<number | null>(null);
+  const activeDeckRef = useRef<'A' | 'B'>('A');
+  activeDeckRef.current = activeDeck;
+  const isPausedRef = useRef(isPaused);
+  isPausedRef.current = isPaused;
+  const videoVolumeRef = useRef(audioSettings.videoVolume);
+  videoVolumeRef.current = audioSettings.videoVolume;
+  const selectedSeatRef = useRef(selectedSeat);
+  selectedSeatRef.current = selectedSeat;
+
+  const [videoAspect, setVideoAspect] = useState<number>(16 / 9);
+  const [sceneReady, setSceneReady] = useState(false);
+  const [entranceComplete, setEntranceComplete] = useState(false);
+  const [viewMode, setViewMode] = useState<CameraViewMode>('seat');
+  const [hoveredSeatId, setHoveredSeatId] = useState<string | null>(null);
+  const [seatShiftToast, setSeatShiftToast] = useState<string | null>(null);
+
+  const [resetViewSignal, setResetViewSignal] = useState(0);
+  const [skipWalkSignal, setSkipWalkSignal] = useState(0);
+
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  const [hudVisible, setHudVisible] = useState(true);
+  const [controlsManuallyHidden, setControlsManuallyHidden] = useState(false);
+  const [showMixerPopover, setShowMixerPopover] = useState(false);
+  const [show4dxPopover, setShow4dxPopover] = useState(false);
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [isLeaving, setIsLeaving] = useState(false);
+
+  const [autoplayBlocked, setAutoplayBlocked] = useState(false);
+  const [playbackError, setPlaybackError] = useState<string | null>(null);
+
+  const inactivityTimerRef = useRef<number | null>(null);
+  const showStartingTimerRef = useRef<number | null>(null);
+  const autoStartTimerRef = useRef<number | null>(null);
+  const leaveTimerRef = useRef<number | null>(null);
+  const toastTimerRef = useRef<number | null>(null);
+
+  const currentItem = playlist[currentPlaybackIndex] || null;
+
+  const getActiveVideoEl = useCallback((): HTMLVideoElement | null => {
+    return activeDeckRef.current === 'A' ? deckARef.current : deckBRef.current;
+  }, []);
+
+  // Create persistent Dual-Deck HTMLVideoElements mounted INSIDE containerRef (so Fullscreen Top Layer never occludes or stalls decoding)
+  useEffect(() => {
+    const host = videoHostRef.current || containerRef.current || document.body;
+    const createDeck = () => {
+      const vid = document.createElement('video');
+      vid.playsInline = true;
+      vid.preload = 'auto';
+      vid.disableRemotePlayback = true;
+      vid.style.width = '32px';
+      vid.style.height = '18px';
+      vid.style.position = 'absolute';
+      vid.style.top = '0';
+      vid.style.left = '0';
+      vid.style.pointerEvents = 'none';
+      host.appendChild(vid);
+      return vid;
+    };
+
+    const vidA = createDeck();
+    const vidB = createDeck();
+    deckARef.current = vidA;
+    deckBRef.current = vidB;
+    setDeckAEl(vidA);
+    setDeckBEl(vidB);
+
+    return () => {
+      if (leaveTimerRef.current) window.clearTimeout(leaveTimerRef.current);
+      if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+      [vidA, vidB].forEach((vid) => {
+        try {
+          vid.pause();
+          vid.removeAttribute('src');
+          vid.load();
+          vid.remove();
+        } catch {
+          // Ignore video cleanup error
+        }
+      });
+      deckARef.current = null;
+      deckBRef.current = null;
+      setDeckAEl(null);
+      setDeckBEl(null);
+      try {
+        cinemaAudioEngine.dispose();
+      } catch {
+        // Ignore audio disposal error
+      }
+    };
+  }, []);
+
+  // Preload current item on active deck & next playlist item metadata on standby deck
+  useEffect(() => {
+    const vidA = deckARef.current;
+    const vidB = deckBRef.current;
+    if (!vidA || !vidB || playlist.length === 0) return;
+
+    const curr = playlist[currentPlaybackIndex];
+    const next = playlist[currentPlaybackIndex + 1];
+
+    const activeKey = activeDeck;
+    const standbyKey: 'A' | 'B' = activeKey === 'A' ? 'B' : 'A';
+    const activeEl = activeKey === 'A' ? vidA : vidB;
+    const standbyEl = standbyKey === 'A' ? vidA : vidB;
+
+    activeEl.preload = 'auto';
+    standbyEl.preload = 'metadata';
+
+    if (curr && loadedUrlRef.current[activeKey] !== curr.objectUrl) {
+      loadedUrlRef.current[activeKey] = curr.objectUrl;
+      activeEl.src = curr.objectUrl;
+      activeEl.currentTime = 0;
+      activeEl.load();
+    }
+
+    if (next && loadedUrlRef.current[standbyKey] !== next.objectUrl) {
+      loadedUrlRef.current[standbyKey] = next.objectUrl;
+      standbyEl.pause();
+      standbyEl.src = next.objectUrl;
+      standbyEl.currentTime = 0;
+      standbyEl.load();
+    }
+  }, [playlist, currentPlaybackIndex, activeDeck]);
+
+  // Initialize Web Audio API profile once when entering theater
+  useEffect(() => {
+    const seat = selectedSeatRef.current;
+    if (!selectedTheaterConfig || !seat) return;
+    const seatOffsetRatio =
+      seat.worldPosition[0] / Math.max(1, selectedTheaterConfig.auditoriumWidth / 2);
+    cinemaAudioEngine
+      .initialize(selectedTheaterConfig.audioProfile, seatOffsetRatio)
+      .then(() => {
+        if (deckARef.current) cinemaAudioEngine.attachVideoElement(deckARef.current);
+        if (deckBRef.current) cinemaAudioEngine.attachVideoElement(deckBRef.current);
+      })
+      .catch(() => {});
+  }, [selectedTheaterConfig]);
+
+  // Sync audio settings with Web Audio engine & fallback video elements
+  useEffect(() => {
+    [deckARef.current, deckBRef.current].forEach((vid) => {
+      if (!vid) return;
+      vid.muted = audioSettings.muted;
+      if (!cinemaAudioEngine.initialized) {
+        vid.volume = audioSettings.masterVolume * audioSettings.videoVolume;
+      }
+    });
+
+    const windActive =
+      Boolean(selectedTheaterConfig?.supports4dxEffects) &&
+      fourDxSettings.enabled &&
+      fourDxSettings.windAudioEnabled;
+    cinemaAudioEngine.updateMix(
+      audioSettings,
+      showState,
+      windActive,
+      fourDxSettings.vibrationIntensity,
+    );
+  }, [audioSettings, showState, selectedTheaterConfig, fourDxSettings]);
+
+  // Begin the lighting dim -> video start sequence
+  const beginShowSequence = useCallback(() => {
+    if (showState !== 'AUDITORIUM_OPEN') return;
+    if (autoStartTimerRef.current) {
+      window.clearTimeout(autoStartTimerRef.current);
+      autoStartTimerRef.current = null;
+    }
+
+    setShowState('SHOW_STARTING');
+
+    showStartingTimerRef.current = window.setTimeout(() => {
+      setShowState('SHOW_PLAYING');
+    }, 1250);
+  }, [showState, setShowState]);
+
+  // Once entrance walk finishes, smoothly start the show after a brief moment in the lit hall
+  useEffect(() => {
+    if (entranceComplete && showState === 'AUDITORIUM_OPEN') {
+      autoStartTimerRef.current = window.setTimeout(() => {
+        beginShowSequence();
+      }, 900);
+    }
+    return () => {
+      if (autoStartTimerRef.current) {
+        window.clearTimeout(autoStartTimerRef.current);
+      }
+    };
+  }, [entranceComplete, showState, beginShowSequence]);
+
+  useEffect(() => {
+    return () => {
+      if (showStartingTimerRef.current) {
+        window.clearTimeout(showStartingTimerRef.current);
+      }
+    };
+  }, []);
+
+  // Load and play current playlist item cleanly using Dual-Deck readiness wait
+  useEffect(() => {
+    const vidA = deckARef.current;
+    const vidB = deckBRef.current;
+    if (!vidA || !vidB || !currentItem) return;
+
+    const activeEl = activeDeck === 'A' ? vidA : vidB;
+    const standbyEl = activeDeck === 'A' ? vidB : vidA;
+
+    if (showState !== 'SHOW_PLAYING') {
+      if (showState === 'AUDITORIUM_OPEN' || showState === 'SHOW_COMPLETED') {
+        vidA.pause();
+        vidB.pause();
+      }
+      return;
+    }
+
+    standbyEl.pause();
+    setPlaybackError(null);
+    setAutoplayBlocked(false);
+
+    if (loadedUrlRef.current[activeDeck] !== currentItem.objectUrl) {
+      loadedUrlRef.current[activeDeck] = currentItem.objectUrl;
+      activeEl.src = currentItem.objectUrl;
+      activeEl.currentTime = 0;
+      activeEl.load();
+    }
+
+    setCurrentTime(activeEl.currentTime || 0);
+    setDuration(
+      Number.isFinite(activeEl.duration) && activeEl.duration > 0
+        ? activeEl.duration
+        : currentItem.duration || 0,
+    );
+    if (activeEl.videoWidth > 0 && activeEl.videoHeight > 0) {
+      setVideoAspect(activeEl.videoWidth / activeEl.videoHeight);
+    } else if (currentItem.width > 0 && currentItem.height > 0) {
+      setVideoAspect(currentItem.width / currentItem.height);
+    }
+
+    let cancelled = false;
+
+    const waitUntilPlayable = (el: HTMLVideoElement): Promise<void> => {
+      if (el.readyState >= 2) return Promise.resolve();
+      return new Promise((resolve) => {
+        let settled = false;
+        const finish = () => {
+          if (settled) return;
+          settled = true;
+          el.removeEventListener('canplay', finish);
+          el.removeEventListener('loadeddata', finish);
+          window.clearTimeout(timer);
+          resolve();
+        };
+        el.addEventListener('canplay', finish);
+        el.addEventListener('loadeddata', finish);
+        const timer = window.setTimeout(finish, 2500);
+      });
+    };
+
+    const startActivePlayback = async () => {
+      try {
+        const seat = selectedSeatRef.current;
+        if (selectedTheaterConfig && seat) {
+          const seatOffsetRatio =
+            seat.worldPosition[0] /
+            Math.max(1, selectedTheaterConfig.auditoriumWidth / 2);
+          await cinemaAudioEngine.initialize(selectedTheaterConfig.audioProfile, seatOffsetRatio);
+          cinemaAudioEngine.attachVideoElement(activeEl);
+          cinemaAudioEngine.attachVideoElement(standbyEl);
+          cinemaAudioEngine.fadeInVideo(0.65, videoVolumeRef.current);
+        }
+
+        await waitUntilPlayable(activeEl);
+        if (cancelled) return;
+
+        if (activeEl.videoWidth > 0 && activeEl.videoHeight > 0) {
+          setVideoAspect(activeEl.videoWidth / activeEl.videoHeight);
+        }
+        if (Number.isFinite(activeEl.duration) && activeEl.duration > 0) {
+          setDuration(activeEl.duration);
+        }
+
+        if (!isPausedRef.current) {
+          await activeEl.play();
+        } else {
+          activeEl.pause();
+        }
+      } catch (err) {
+        if (cancelled) return;
+        const name = err instanceof Error ? err.name : '';
+        if (name === 'AbortError') {
+          return;
+        }
+        if (name === 'NotAllowedError') {
+          setAutoplayBlocked(true);
+        } else {
+          setPlaybackError(
+            `Unable to play "${currentItem.fileName}". Verify the file uses a browser-supported codec.`,
+          );
+        }
+      }
+    };
+
+    startActivePlayback();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showState, currentItem, activeDeck, selectedTheaterConfig]);
+
+  // Dedicated lightweight pause/resume sync (never reloads or fades audio)
+  useEffect(() => {
+    if (showState !== 'SHOW_PLAYING') return;
+    const vid = activeDeck === 'A' ? deckARef.current : deckBRef.current;
+    if (!vid) return;
+    if (isPaused) {
+      if (!vid.paused) vid.pause();
+    } else {
+      cinemaAudioEngine.resume().catch(() => {});
+      if (vid.paused && vid.readyState >= 2) {
+        vid.play().catch(() => {});
+      }
+    }
+  }, [isPaused, showState, activeDeck]);
+
+  // Advance cleanly from active deck to preloaded standby deck
+  const advancePlaylistOrComplete = useCallback(() => {
+    if (advancingForIndexRef.current === currentPlaybackIndex) return;
+    advancingForIndexRef.current = currentPlaybackIndex;
+
+    const currentEl = activeDeckRef.current === 'A' ? deckARef.current : deckBRef.current;
+    if (currentEl) {
+      currentEl.pause();
+    }
+
+    if (currentPlaybackIndex + 1 < playlist.length) {
+      const nextIndex = currentPlaybackIndex + 1;
+      const nextDeck: 'A' | 'B' = activeDeckRef.current === 'A' ? 'B' : 'A';
+      setCurrentTime(0);
+      setActiveDeck(nextDeck);
+      setCurrentPlaybackIndex(nextIndex);
+      advancingForIndexRef.current = null;
+    } else {
+      cinemaAudioEngine.fadeOutVideo(0.9);
+      setShowState('SHOW_COMPLETED');
+      setShowCompleted(true);
+      advancingForIndexRef.current = null;
+    }
+  }, [
+    currentPlaybackIndex,
+    playlist.length,
+    setCurrentPlaybackIndex,
+    setShowState,
+    setShowCompleted,
+  ]);
+
+  // Attach media event listeners + automatic stall recovery to the currently active deck
+  useEffect(() => {
+    const vid = activeDeck === 'A' ? deckARef.current : deckBRef.current;
+    if (!vid) return;
+
+    const onLoadedMetadata = () => {
+      if (Number.isFinite(vid.duration) && vid.duration > 0) {
+        setDuration(vid.duration);
+      }
+      if (vid.videoWidth > 0 && vid.videoHeight > 0) {
+        setVideoAspect(vid.videoWidth / vid.videoHeight);
+      }
+    };
+
+    const onTimeUpdate = () => {
+      const t = vid.currentTime || 0;
+      const d = Number.isFinite(vid.duration) ? vid.duration : 0;
+      setCurrentTime(t);
+
+      if (
+        selectedTheaterConfig?.supports4dxEffects &&
+        fourDxSettings.enabled &&
+        fourDxSettings.windAudioEnabled
+      ) {
+        cinemaAudioEngine.modulateWind((Math.sin(t * 0.8) + 1) * 0.5);
+      }
+
+      // Near-end guard for codecs that stall slightly before dispatching 'ended'
+      if (showState === 'SHOW_PLAYING' && d > 0.35 && t >= d - 0.04) {
+        advancePlaylistOrComplete();
+      }
+    };
+
+    const onCanPlay = () => {
+      if (showState === 'SHOW_PLAYING' && !isPausedRef.current && vid.paused && !vid.ended) {
+        cinemaAudioEngine.resume().catch(() => {});
+        vid.play().catch(() => {});
+      }
+    };
+
+    const onStallOrWait = () => {
+      if (
+        showState === 'SHOW_PLAYING' &&
+        !isPausedRef.current &&
+        !vid.ended &&
+        vid.paused &&
+        vid.readyState >= 2
+      ) {
+        cinemaAudioEngine.resume().catch(() => {});
+        vid.play().catch(() => {});
+      }
+    };
+
+    const onEnded = () => {
+      if (showState === 'SHOW_PLAYING') {
+        advancePlaylistOrComplete();
+      }
+    };
+
+    const onError = () => {
+      if (showState === 'SHOW_PLAYING' && vid.error) {
+        setPlaybackError(
+          `Playback error on "${currentItem?.fileName || 'video'}". The media stream may use an unsupported codec.`,
+        );
+      }
+    };
+
+    vid.addEventListener('loadedmetadata', onLoadedMetadata);
+    vid.addEventListener('timeupdate', onTimeUpdate);
+    vid.addEventListener('canplay', onCanPlay);
+    vid.addEventListener('waiting', onStallOrWait);
+    vid.addEventListener('stalled', onStallOrWait);
+    vid.addEventListener('ended', onEnded);
+    vid.addEventListener('error', onError);
+
+    // Watchdog prevents unexpected browser media suspension or decoder stalls during long playback & fullscreen
+    const watchdogId = window.setInterval(() => {
+      if (
+        showState === 'SHOW_PLAYING' &&
+        !isPausedRef.current &&
+        !autoplayBlocked &&
+        !vid.ended &&
+        vid.paused &&
+        vid.readyState >= 2
+      ) {
+        cinemaAudioEngine.resume().catch(() => {});
+        vid.play().catch(() => {});
+      }
+    }, 600);
+
+    return () => {
+      window.clearInterval(watchdogId);
+      vid.removeEventListener('loadedmetadata', onLoadedMetadata);
+      vid.removeEventListener('timeupdate', onTimeUpdate);
+      vid.removeEventListener('canplay', onCanPlay);
+      vid.removeEventListener('waiting', onStallOrWait);
+      vid.removeEventListener('stalled', onStallOrWait);
+      vid.removeEventListener('ended', onEnded);
+      vid.removeEventListener('error', onError);
+    };
+  }, [
+    activeDeck,
+    showState,
+    currentItem,
+    selectedTheaterConfig,
+    fourDxSettings,
+    autoplayBlocked,
+    advancePlaylistOrComplete,
+  ]);
+
+  // Mid-show click-on-seat shifting
+  const handleSelectSeatInShow = useCallback(
+    (seatId: string) => {
+      if (!selectedTheaterConfig || !selectedSeat) return;
+      const target = theaterSeats.find((s) => s.id === seatId);
+      if (!target || target.status === 'unavailable') return;
+
+      if (seatId !== selectedSeat.id) {
+        selectSeat(seatId);
+        const seatOffsetRatio =
+          target.worldPosition[0] / Math.max(1, selectedTheaterConfig.auditoriumWidth / 2);
+        cinemaAudioEngine.updateSeatPan(selectedTheaterConfig.audioProfile, seatOffsetRatio);
+        setSeatShiftToast(`Shifted to Seat ${seatId}`);
+        if (toastTimerRef.current) window.clearTimeout(toastTimerRef.current);
+        toastTimerRef.current = window.setTimeout(() => setSeatShiftToast(null), 2200);
+      }
+      setHoveredSeatId(null);
+      setViewMode('seat');
+    },
+    [selectedTheaterConfig, selectedSeat, theaterSeats, selectSeat],
+  );
+
+  const isHoveringHudRef = useRef(false);
+
+  // Auto-hide HUD during active playback on inactivity (stays visible while paused)
+  const bumpHudActivity = useCallback(() => {
+    setHudVisible(true);
+    if (inactivityTimerRef.current) {
+      window.clearTimeout(inactivityTimerRef.current);
+    }
+    if (
+      showState === 'SHOW_PLAYING' &&
+      !isPaused &&
+      !showMixerPopover &&
+      !show4dxPopover &&
+      !showExitConfirm &&
+      !isHoveringHudRef.current &&
+      viewMode === 'seat'
+    ) {
+      inactivityTimerRef.current = window.setTimeout(() => {
+        if (!isHoveringHudRef.current) {
+          setHudVisible(false);
+        }
+      }, 5500);
+    }
+  }, [showState, isPaused, showMixerPopover, show4dxPopover, showExitConfirm, viewMode]);
+
+  useEffect(() => {
+    bumpHudActivity();
+    return () => {
+      if (inactivityTimerRef.current) window.clearTimeout(inactivityTimerRef.current);
+    };
+  }, [bumpHudActivity]);
+
+  // Keyboard shortcuts (Space = Pause/Resume, H = Hide Controls)
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code === 'KeyH') {
+        setControlsManuallyHidden((v) => !v);
+      } else if (e.code === 'Space' && showState === 'SHOW_PLAYING') {
+        e.preventDefault();
+        const vid = getActiveVideoEl();
+        if (!vid) return;
+        if (vid.paused) {
+          vid.play().catch(() => {});
+          setIsPaused(false);
+        } else {
+          vid.pause();
+          setIsPaused(true);
+        }
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [showState, setIsPaused, getActiveVideoEl]);
+
+  // Fullscreen listener: re-verify continuous smooth video & audio playback after fullscreen transitions
+  useEffect(() => {
+    const keepPlayingAfterFullscreen = () => {
+      const vid = getActiveVideoEl();
+      if (
+        showState === 'SHOW_PLAYING' &&
+        !isPausedRef.current &&
+        vid &&
+        !vid.ended &&
+        vid.readyState >= 2 &&
+        vid.paused
+      ) {
+        cinemaAudioEngine.resume().catch(() => {});
+        vid.play().catch(() => {});
+      }
+    };
+
+    const onFsChange = () => {
+      setIsFullscreen(Boolean(document.fullscreenElement));
+      keepPlayingAfterFullscreen();
+      window.setTimeout(keepPlayingAfterFullscreen, 120);
+    };
+    document.addEventListener('fullscreenchange', onFsChange);
+    return () => document.removeEventListener('fullscreenchange', onFsChange);
+  }, [showState, getActiveVideoEl]);
+
+  if (!selectedTheaterConfig || !selectedSeat || playlist.length === 0) {
+    return (
+      <div className="flex h-screen w-screen flex-col items-center justify-center bg-[#070709] p-6 text-center text-[#F4F1EA]">
+        <h1 className="font-display text-3xl">Auditorium Session Unavailable</h1>
+        <p className="mt-2 max-w-md text-sm text-neutral-400">
+          Theater configuration, seat coordinates, or local video playlist is missing.
+        </p>
+        <button
+          type="button"
+          onClick={() => navigate('home')}
+          className="mt-6 rounded-md bg-[#D4AF37] px-6 py-3 text-xs font-semibold uppercase tracking-wider text-[#070709] cursor-pointer"
+        >
+          Return Home
+        </button>
+      </div>
+    );
+  }
+
+  const togglePlayPause = () => {
+    const vid = getActiveVideoEl();
+    if (!vid) return;
+    if (vid.paused) {
+      cinemaAudioEngine.resume().catch(() => {});
+      vid
+        .play()
+        .then(() => {
+          setIsPaused(false);
+          setAutoplayBlocked(false);
+        })
+        .catch(() => setAutoplayBlocked(true));
+    } else {
+      vid.pause();
+      setIsPaused(true);
+    }
+  };
+
+  const handleRestartShow = () => {
+    advancingForIndexRef.current = null;
+    const vidA = deckARef.current;
+    const vidB = deckBRef.current;
+    if (vidA && playlist[0]) {
+      vidA.pause();
+      if (loadedUrlRef.current.A !== playlist[0].objectUrl) {
+        loadedUrlRef.current.A = playlist[0].objectUrl;
+        vidA.src = playlist[0].objectUrl;
+      }
+      vidA.currentTime = 0;
+    }
+    if (vidB) {
+      vidB.pause();
+      if (playlist[1]) {
+        loadedUrlRef.current.B = playlist[1].objectUrl;
+        vidB.src = playlist[1].objectUrl;
+        vidB.currentTime = 0;
+        vidB.load();
+      }
+    }
+    setActiveDeck('A');
+    setShowCompleted(false);
+    setCurrentPlaybackIndex(0);
+    setCurrentTime(0);
+    setIsPaused(false);
+    setShowState('SHOW_PLAYING');
+  };
+
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const vid = getActiveVideoEl();
+    if (!vid) return;
+    const nextTime = parseFloat(e.target.value);
+    vid.currentTime = nextTime;
+    setCurrentTime(nextTime);
+  };
+
+  const toggleFullscreen = async () => {
+    try {
+      if (!document.fullscreenElement) {
+        await containerRef.current?.requestFullscreen();
+      } else {
+        await document.exitFullscreen();
+      }
+    } catch {
+      // Fullscreen denied or unsupported
+    }
+  };
+
+  const handleManualUnlockPlay = async () => {
+    const vid = getActiveVideoEl();
+    if (!vid) return;
+    try {
+      const seatOffsetRatio =
+        selectedSeat.worldPosition[0] /
+        Math.max(1, selectedTheaterConfig.auditoriumWidth / 2);
+      await cinemaAudioEngine.initialize(selectedTheaterConfig.audioProfile, seatOffsetRatio);
+      cinemaAudioEngine.attachVideoElement(vid);
+      await vid.play();
+      setAutoplayBlocked(false);
+      setIsPaused(false);
+    } catch {
+      setPlaybackError('Unable to start browser media playback.');
+    }
+  };
+
+  const handleExitAndReturnHome = () => {
+    if (isLeaving) return;
+    setIsLeaving(true);
+    [deckARef.current, deckBRef.current].forEach((vid) => {
+      if (vid) vid.pause();
+    });
+    try {
+      cinemaAudioEngine.fadeOutVideo(0.4);
+    } catch {
+      // Ignore fade-out error if audio context unavailable
+    }
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    }
+    leaveTimerRef.current = window.setTimeout(() => {
+      try {
+        cinemaAudioEngine.dispose();
+      } catch {
+        // Ignore audio disposal error
+      }
+      resetShowSession();
+    }, 250);
+  };
+
+  const handleEntranceComplete = useCallback(() => setEntranceComplete(true), []);
+  const handleSceneReady = useCallback(() => setSceneReady(true), []);
+
+  const effectiveHudVisible = !controlsManuallyHidden && hudVisible;
+
+  return (
+    <div
+      ref={containerRef}
+      onMouseMove={bumpHudActivity}
+      onTouchStart={bumpHudActivity}
+      className="relative h-screen w-screen overflow-hidden bg-[#040406] text-[#F4F1EA] select-none"
+    >
+      {/* Hidden hardware-decode video host kept inside fullscreen container so Fullscreen never throttles playback */}
+      <div
+        ref={videoHostRef}
+        aria-hidden="true"
+        className="pointer-events-none absolute bottom-0 left-0 z-[1] h-[18px] w-[32px] overflow-hidden opacity-[0.01]"
+      />
+
+      {/* 3D Auditorium Canvas */}
+      <CinemaAuditoriumCanvas
+        config={selectedTheaterConfig}
+        seats={theaterSeats}
+        selectedSeat={selectedSeat}
+        hoveredSeatId={hoveredSeatId}
+        onSelectSeat={handleSelectSeatInShow}
+        onHoverSeat={setHoveredSeatId}
+        videoElementA={deckAEl}
+        videoElementB={deckBEl}
+        activeDeck={activeDeck}
+        videoAspectRatio={videoAspect}
+        screenFraming={screenFraming}
+        viewMode={viewMode}
+        showState={showState}
+        isPaused={isPaused}
+        graphicsQuality={graphicsQuality}
+        fourDxSettings={fourDxSettings}
+        screenReflectionBrightness={screenReflectionBrightness}
+        entranceComplete={entranceComplete}
+        onEntranceComplete={handleEntranceComplete}
+        resetViewSignal={resetViewSignal}
+        skipWalkSignal={skipWalkSignal}
+        onSceneReady={handleSceneReady}
+      />
+
+      {/* Cinematic Fade-Out Transition Overlay when Leaving */}
+      <div
+        className={`pointer-events-none fixed inset-0 z-50 bg-black transition-opacity duration-300 ${
+          isLeaving ? 'opacity-100' : 'opacity-0'
+        }`}
+      />
+
+      {/* Loading Auditorium Overlay */}
+      {!sceneReady && (
+        <div className="absolute inset-0 z-40 flex flex-col items-center justify-center bg-[#070709] p-6 text-center">
+          <div className="h-10 w-10 animate-spin rounded-full border-2 border-[#D4AF37]/25 border-t-[#D4AF37]" />
+          <p className="mt-5 font-display text-2xl text-[#F4F1EA]">
+            Preparing {selectedTheaterConfig.theaterName}
+          </p>
+          <p className="mt-1.5 text-xs text-neutral-400">
+            Synchronizing Seat {selectedSeat.id} · Compiling Shaders & Acoustic Profile
+          </p>
+        </div>
+      )}
+
+      {/* Entrance Walk Prompt */}
+      {sceneReady && !entranceComplete && (
+        <div className="absolute bottom-8 left-1/2 z-30 -translate-x-1/2 flex items-center gap-4 rounded-lg border border-white/15 bg-[#090A0E]/92 px-5 py-3">
+          <span className="text-xs text-neutral-300">
+            Walking to Seat <strong className="text-[#E5C158]">{selectedSeat.id}</strong>
+          </span>
+          <button
+            type="button"
+            onClick={() => setSkipWalkSignal((n) => n + 1)}
+            className="rounded border border-white/20 px-3 py-1 text-[11px] font-medium text-[#F4F1EA] hover:border-[#D4AF37] cursor-pointer"
+          >
+            Skip to Seat
+          </button>
+        </div>
+      )}
+
+      {/* Seated Pre-Show Banner (before lights dim) */}
+      {sceneReady && entranceComplete && showState === 'AUDITORIUM_OPEN' && (
+        <div className="absolute bottom-28 left-1/2 z-30 -translate-x-1/2 flex flex-col items-center gap-3 rounded-xl border border-white/15 bg-[#090A0E]/92 px-6 py-4 text-center">
+          <p className="text-xs text-neutral-300">
+            Seated in <strong className="text-[#E5C158]">{selectedSeat.id}</strong> · Drag to look
+            360° around the hall or click any seat to shift
+          </p>
+          <button
+            type="button"
+            onClick={beginShowSequence}
+            className="inline-flex items-center gap-2 rounded-md bg-[#D4AF37] px-5 py-2 text-xs font-semibold uppercase tracking-wider text-[#070709] hover:bg-[#E5C158] cursor-pointer"
+          >
+            <Play className="h-3.5 w-3.5 fill-current" />
+            <span>Dim Lights & Start Show</span>
+          </button>
+        </div>
+      )}
+
+      {/* Show Starting Transition Indicator */}
+      {showState === 'SHOW_STARTING' && (
+        <div className="pointer-events-none absolute top-6 left-1/2 z-20 -translate-x-1/2 rounded-lg border border-white/10 bg-[#090A0E]/85 px-4 py-2 text-xs text-neutral-300">
+          Dimming auditorium lights · Starting feature presentation
+        </div>
+      )}
+
+      {/* Paused House Lights Indicator */}
+      {showState === 'SHOW_PLAYING' && isPaused && !showCompleted && (
+        <div className="pointer-events-none absolute top-6 left-1/2 z-20 -translate-x-1/2 rounded-lg border border-[#D4AF37]/35 bg-[#090A0E]/88 px-4 py-1.5 text-xs text-[#E5C158]">
+          Paused · House Lights On
+        </div>
+      )}
+
+      {/* Mid-show Interactive Seat Hover / Shift Notification */}
+      {entranceComplete && hoveredSeatId && hoveredSeatId !== selectedSeat.id && (
+        <div className="pointer-events-none absolute top-16 left-1/2 z-20 -translate-x-1/2 rounded-lg border border-[#38bdf8]/45 bg-[#090A0E]/92 px-4 py-1.5 text-xs text-[#bae6fd]">
+          Click to shift to Seat <strong className="text-white">{hoveredSeatId}</strong>
+        </div>
+      )}
+
+      {seatShiftToast && !hoveredSeatId && (
+        <div className="pointer-events-none absolute top-16 left-1/2 z-20 -translate-x-1/2 rounded-lg border border-[#D4AF37]/45 bg-[#090A0E]/92 px-4 py-1.5 text-xs text-[#E5C158]">
+          {seatShiftToast}
+        </div>
+      )}
+
+      {/* Autoplay Blocked Prompt */}
+      {autoplayBlocked && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/70 p-6">
+          <div className="max-w-md rounded-xl border border-[#D4AF37]/40 bg-[#0E0F13] p-6 text-center space-y-4">
+            <h2 className="font-display text-2xl text-[#F4F1EA]">Start Projection & Audio</h2>
+            <p className="text-sm text-neutral-300">
+              Your browser paused automatic audio playback after the walk-in sequence. Click below
+              to start your video with full Web Audio sound.
+            </p>
+            <button
+              type="button"
+              onClick={handleManualUnlockPlay}
+              className="inline-flex items-center gap-2 rounded-md bg-[#D4AF37] px-6 py-3 text-xs font-semibold uppercase tracking-wider text-[#070709] hover:bg-[#E5C158] cursor-pointer"
+            >
+              <Play className="h-4 w-4 fill-current" />
+              <span>Play Video With Audio</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Playback Error Modal */}
+      {playbackError && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/80 p-6">
+          <div className="max-w-md rounded-xl border border-red-500/40 bg-[#0E0F13] p-6 text-center space-y-4">
+            <AlertTriangle className="mx-auto h-8 w-8 text-red-400" />
+            <h2 className="font-display text-2xl text-[#F4F1EA]">Playback Interrupted</h2>
+            <p className="text-sm text-neutral-300">{playbackError}</p>
+            <div className="flex justify-center gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => navigate('video_upload')}
+                className="rounded-md border border-white/15 px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-neutral-200 hover:bg-white/5 cursor-pointer"
+              >
+                Re-select Video
+              </button>
+              <button
+                type="button"
+                onClick={handleExitAndReturnHome}
+                className="rounded-md bg-[#D4AF37] px-4 py-2.5 text-xs font-semibold uppercase tracking-wider text-[#070709] cursor-pointer"
+              >
+                Return Home
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Top-Left & Top-Right Corner Controls */}
+      <div
+        onMouseEnter={() => {
+          isHoveringHudRef.current = true;
+          bumpHudActivity();
+        }}
+        onMouseLeave={() => {
+          isHoveringHudRef.current = false;
+          bumpHudActivity();
+        }}
+        className={`absolute top-4 left-4 right-4 z-20 flex flex-wrap items-center justify-between gap-2 transition-opacity duration-300 ${
+          effectiveHudVisible
+            ? 'opacity-100'
+            : controlsManuallyHidden
+              ? 'opacity-0 pointer-events-none'
+              : 'opacity-0 hover:opacity-100'
+        }`}
+      >
+        <div className="rounded-lg border border-white/10 bg-[#090A0E]/88 px-3.5 py-2 text-xs">
+          <span className="font-medium text-[#F4F1EA]">{selectedTheaterConfig.shortName}</span>
+          <span className="mx-2 text-neutral-600">·</span>
+          <span className="font-mono-tabular text-[#E5C158]">Seat {selectedSeat.id}</span>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
+          {/* View Mode Switcher: Seat / Hall (Click Any Seat) / Full Screen */}
+          {entranceComplete && (
+            <div className="flex items-center rounded-lg border border-white/10 bg-[#090A0E]/88 p-0.5 text-xs">
+              <button
+                type="button"
+                onClick={() => setViewMode('seat')}
+                className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 cursor-pointer transition-colors ${
+                  viewMode === 'seat'
+                    ? 'bg-[#D4AF37] text-[#070709] font-semibold'
+                    : 'text-neutral-300 hover:text-white'
+                }`}
+              >
+                <Armchair className="h-3.5 w-3.5" />
+                <span>Seat</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('hall')}
+                className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 cursor-pointer transition-colors ${
+                  viewMode === 'hall'
+                    ? 'bg-[#D4AF37] text-[#070709] font-semibold'
+                    : 'text-neutral-300 hover:text-white'
+                }`}
+              >
+                <Compass className="h-3.5 w-3.5" />
+                <span>Hall</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('screen_full')}
+                className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 cursor-pointer transition-colors ${
+                  viewMode === 'screen_full'
+                    ? 'bg-[#D4AF37] text-[#070709] font-semibold'
+                    : 'text-neutral-300 hover:text-white'
+                }`}
+              >
+                <Maximize2 className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Full Screen</span>
+              </button>
+            </div>
+          )}
+
+          {viewMode === 'seat' && (
+            <button
+              type="button"
+              onClick={() => setResetViewSignal((n) => n + 1)}
+              title="Reset View to Screen Center"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-[#090A0E]/88 px-3 py-2 text-xs text-neutral-200 hover:border-[#D4AF37]/60 cursor-pointer"
+            >
+              <Compass className="h-3.5 w-3.5 text-[#D4AF37]" />
+              <span className="hidden md:inline">Reset View</span>
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={() => setShowExitConfirm(true)}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-[#090A0E]/88 px-3 py-2 text-xs text-neutral-200 hover:border-red-400/60 hover:text-red-300 cursor-pointer"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">Exit Show</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Hall View Instruction Hint */}
+      {entranceComplete && viewMode === 'hall' && !showCompleted && (
+        <div className="pointer-events-none absolute bottom-32 left-1/2 z-20 -translate-x-1/2 rounded-lg border border-white/15 bg-[#090A0E]/90 px-4 py-1.5 text-xs text-neutral-200">
+          Drag to orbit · Scroll to zoom · Click any available seat to shift there
+        </div>
+      )}
+
+      {/* Show Controls Toggle Button when Manually Hidden */}
+      {controlsManuallyHidden && !showCompleted && entranceComplete && (
+        <button
+          type="button"
+          onClick={() => setControlsManuallyHidden(false)}
+          className="absolute bottom-4 right-4 z-20 inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-[#090A0E]/85 px-3 py-2 text-xs text-neutral-300 hover:text-white cursor-pointer"
+        >
+          <Eye className="h-3.5 w-3.5" />
+          <span>Show Controls</span>
+        </button>
+      )}
+
+      {/* Minimal Bottom Cinema Control Dock */}
+      {!showCompleted && entranceComplete && (
+        <div
+          onMouseEnter={() => {
+            isHoveringHudRef.current = true;
+            bumpHudActivity();
+          }}
+          onMouseLeave={() => {
+            isHoveringHudRef.current = false;
+            bumpHudActivity();
+          }}
+          className={`absolute bottom-4 left-1/2 z-20 w-[min(940px,95vw)] -translate-x-1/2 transition-opacity duration-300 ${
+            effectiveHudVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
+          }`}
+        >
+          {/* Audio & Screen Reflection Mixer Popover */}
+          {showMixerPopover && (
+            <div className="mb-2.5 ml-auto w-76 rounded-xl border border-white/15 bg-[#0B0C10]/96 p-4 space-y-3 text-xs">
+              <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                <span className="font-semibold text-[#F4F1EA]">Audio &amp; Visual Mixer</span>
+                <button
+                  type="button"
+                  onClick={() => setShowMixerPopover(false)}
+                  className="text-neutral-400 hover:text-white cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+              <div>
+                <div className="flex justify-between text-neutral-300 mb-1">
+                  <span>Video Audio</span>
+                  <span className="font-mono-tabular">
+                    {Math.round(audioSettings.videoVolume * 100)}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={audioSettings.videoVolume}
+                  onChange={(e) =>
+                    updateAudioSettings({ videoVolume: parseFloat(e.target.value) })
+                  }
+                  className="w-full accent-[#D4AF37]"
+                />
+              </div>
+              <div>
+                <div className="flex justify-between text-neutral-300 mb-1">
+                  <span>Theater Ambience</span>
+                  <span className="font-mono-tabular">
+                    {Math.round(audioSettings.ambienceVolume * 100)}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={audioSettings.ambienceVolume}
+                  onChange={(e) =>
+                    updateAudioSettings({ ambienceVolume: parseFloat(e.target.value) })
+                  }
+                  className="w-full accent-[#D4AF37]"
+                />
+              </div>
+              <div className="border-t border-white/10 pt-2.5">
+                <div className="flex justify-between text-neutral-300 mb-1">
+                  <span>Screen Light Reflection</span>
+                  <span className="font-mono-tabular text-[#E5C158]">
+                    {Math.round(screenReflectionBrightness * 100)}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={2}
+                  step={0.05}
+                  aria-label="Screen Light Reflection Brightness"
+                  value={screenReflectionBrightness}
+                  onChange={(e) =>
+                    setScreenReflectionBrightness(parseFloat(e.target.value))
+                  }
+                  className="w-full accent-[#D4AF37] cursor-pointer"
+                />
+              </div>
+              {selectedTheaterConfig.supports4dxEffects && (
+                <div>
+                  <div className="flex justify-between text-neutral-300 mb-1">
+                    <span>4DX Wind Effects</span>
+                    <span className="font-mono-tabular">
+                      {Math.round(audioSettings.effectsVolume * 100)}%
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={audioSettings.effectsVolume}
+                    onChange={(e) =>
+                      updateAudioSettings({ effectsVolume: parseFloat(e.target.value) })
+                    }
+                    className="w-full accent-[#D4AF37]"
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* 4DX Theme-Park Motion & Wind Controls Popover */}
+          {show4dxPopover && selectedTheaterConfig.supports4dxEffects && (
+            <div className="mb-2.5 ml-auto w-80 rounded-xl border border-white/15 bg-[#0B0C10]/96 p-4 space-y-3 text-xs">
+              <div className="flex items-center justify-between border-b border-white/10 pb-2">
+                <span className="font-semibold text-[#F4F1EA]">
+                  4DX Motion & Effects
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShow4dxPopover(false)}
+                  className="text-neutral-400 hover:text-white cursor-pointer"
+                >
+                  Close
+                </button>
+              </div>
+              <label className="flex items-center justify-between cursor-pointer">
+                <span className="text-neutral-300">Motion-Synchronized Seats</span>
+                <input
+                  type="checkbox"
+                  checked={fourDxSettings.enabled}
+                  onChange={(e) => updateFourDxSettings({ enabled: e.target.checked })}
+                  className="h-4 w-4 accent-[#D4AF37]"
+                />
+              </label>
+              <div>
+                <div className="flex justify-between text-neutral-400 mb-1">
+                  <span>Seat Hydraulic Heave & Pitch</span>
+                  <span className="font-mono-tabular">
+                    {Math.round(fourDxSettings.vibrationIntensity * 100)}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  disabled={!fourDxSettings.enabled}
+                  value={fourDxSettings.vibrationIntensity}
+                  onChange={(e) =>
+                    updateFourDxSettings({ vibrationIntensity: parseFloat(e.target.value) })
+                  }
+                  className="w-full accent-[#D4AF37]"
+                />
+              </div>
+              <div>
+                <div className="flex justify-between text-neutral-400 mb-1">
+                  <span>Synchronized Camera Motion</span>
+                  <span className="font-mono-tabular">
+                    {Math.round(fourDxSettings.cameraMotionIntensity * 100)}%
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  disabled={!fourDxSettings.enabled}
+                  value={fourDxSettings.cameraMotionIntensity}
+                  onChange={(e) =>
+                    updateFourDxSettings({ cameraMotionIntensity: parseFloat(e.target.value) })
+                  }
+                  className="w-full accent-[#D4AF37]"
+                />
+              </div>
+              <label className="flex items-center justify-between cursor-pointer">
+                <span className="text-neutral-300">Air Jets & Wind Audio</span>
+                <input
+                  type="checkbox"
+                  disabled={!fourDxSettings.enabled}
+                  checked={fourDxSettings.windAudioEnabled}
+                  onChange={(e) =>
+                    updateFourDxSettings({ windAudioEnabled: e.target.checked })
+                  }
+                  className="h-4 w-4 accent-[#D4AF37]"
+                />
+              </label>
+              <label className="flex items-center justify-between cursor-pointer">
+                <span className="text-neutral-300">Lightning & Strobe Pulses</span>
+                <input
+                  type="checkbox"
+                  disabled={!fourDxSettings.enabled}
+                  checked={fourDxSettings.atmosphericLightEnabled}
+                  onChange={(e) =>
+                    updateFourDxSettings({ atmosphericLightEnabled: e.target.checked })
+                  }
+                  className="h-4 w-4 accent-[#D4AF37]"
+                />
+              </label>
+            </div>
+          )}
+
+          {/* Main Compact Control Bar */}
+          <div className="rounded-xl border border-white/12 bg-[#090A0E]/92 px-4 py-3 space-y-2.5">
+            {/* Video Progress Scrubber */}
+            <div className="flex items-center gap-3 text-[11px] font-mono-tabular text-neutral-400">
+              <span className="w-12 text-right">{formatDuration(currentTime)}</span>
+              <input
+                type="range"
+                min={0}
+                max={Math.max(duration, 0.1)}
+                step={0.25}
+                value={Math.min(currentTime, duration || 0)}
+                onChange={handleSeek}
+                disabled={showState !== 'SHOW_PLAYING'}
+                aria-label="Video playback progress"
+                className="flex-1 accent-[#D4AF37] cursor-pointer"
+              />
+              <span className="w-12">{formatDuration(duration)}</span>
+            </div>
+
+            {/* Buttons & Playlist Readout */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0">
+                <button
+                  type="button"
+                  onClick={togglePlayPause}
+                  disabled={showState !== 'SHOW_PLAYING'}
+                  aria-label={isPaused ? 'Resume playback' : 'Pause playback'}
+                  className="flex h-9 w-9 items-center justify-center rounded-md bg-[#D4AF37] text-[#070709] hover:bg-[#E5C158] disabled:opacity-40 cursor-pointer shrink-0"
+                >
+                  {isPaused ? (
+                    <Play className="h-4 w-4 fill-current" />
+                  ) : (
+                    <Pause className="h-4 w-4 fill-current" />
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleRestartShow}
+                  title="Restart Show"
+                  aria-label="Restart show"
+                  className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 text-neutral-300 hover:text-white cursor-pointer shrink-0"
+                >
+                  <RotateCcw className="h-4 w-4" />
+                </button>
+
+                <div className="min-w-0 pl-1">
+                  <p className="truncate text-xs font-medium text-[#F4F1EA] max-w-[160px] sm:max-w-[230px]">
+                    {currentItem ? currentItem.fileName : 'Loading'}
+                  </p>
+                  <p className="font-mono-tabular text-[11px] text-neutral-400">
+                    Item {String(currentPlaybackIndex + 1).padStart(2, '0')} /{' '}
+                    {String(playlist.length).padStart(2, '0')}
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 shrink-0">
+                {/* Screen Fill vs Aspect Fit Toggle */}
+                <button
+                  type="button"
+                  onClick={() =>
+                    setScreenFraming(screenFraming === 'fill' ? 'fit' : 'fill')
+                  }
+                  title={
+                    screenFraming === 'fill'
+                      ? 'Screen framing: Fill entire projection screen (click for Fit)'
+                      : 'Screen framing: Fit original aspect ratio (click for Fill)'
+                  }
+                  className="inline-flex items-center gap-1 rounded-md border border-white/10 px-2.5 py-2 text-[11px] text-neutral-200 hover:border-[#D4AF37]/60 cursor-pointer"
+                >
+                  <Monitor className="h-3.5 w-3.5 text-[#D4AF37]" />
+                  <span>{screenFraming === 'fill' ? 'Fill Screen' : 'Fit Frame'}</span>
+                </button>
+
+                {/* 4DX Effects Trigger */}
+                {selectedTheaterConfig.supports4dxEffects && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShow4dxPopover((v) => !v);
+                      setShowMixerPopover(false);
+                    }}
+                    className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-2 text-[11px] cursor-pointer ${
+                      fourDxSettings.enabled
+                        ? 'border-[#38bdf8]/60 bg-[#38bdf8]/15 text-[#7dd3fc]'
+                        : 'border-white/10 text-neutral-300 hover:text-white'
+                    }`}
+                  >
+                    <Sparkles className="h-3.5 w-3.5" />
+                    <span className="hidden sm:inline">4DX</span>
+                  </button>
+                )}
+
+                {/* Mute & Master Volume */}
+                <button
+                  type="button"
+                  onClick={() => updateAudioSettings({ muted: !audioSettings.muted })}
+                  aria-label={audioSettings.muted ? 'Unmute' : 'Mute'}
+                  className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 text-neutral-300 hover:text-white cursor-pointer"
+                >
+                  {audioSettings.muted ? (
+                    <VolumeX className="h-4 w-4 text-red-400" />
+                  ) : (
+                    <Volume2 className="h-4 w-4" />
+                  )}
+                </button>
+
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={audioSettings.muted ? 0 : audioSettings.masterVolume}
+                  onChange={(e) =>
+                    updateAudioSettings({
+                      masterVolume: parseFloat(e.target.value),
+                      muted: false,
+                    })
+                  }
+                  aria-label="Master Volume"
+                  className="hidden sm:block w-20 accent-[#D4AF37] cursor-pointer"
+                />
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMixerPopover((v) => !v);
+                    setShow4dxPopover(false);
+                  }}
+                  title="Audio Mixer"
+                  aria-label="Open audio mixer"
+                  className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 text-neutral-300 hover:text-white cursor-pointer"
+                >
+                  <Sliders className="h-4 w-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setControlsManuallyHidden(true)}
+                  title="Hide Controls (H)"
+                  aria-label="Hide controls"
+                  className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 text-neutral-300 hover:text-white cursor-pointer"
+                >
+                  <EyeOff className="h-4 w-4" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={toggleFullscreen}
+                  title={isFullscreen ? 'Exit Browser Fullscreen' : 'Enter Browser Fullscreen'}
+                  aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
+                  className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 text-neutral-300 hover:text-white cursor-pointer"
+                >
+                  {isFullscreen ? (
+                    <Minimize className="h-4 w-4" />
+                  ) : (
+                    <Maximize className="h-4 w-4" />
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Show Completed Overlay */}
+      {showCompleted && (
+        <div className="absolute inset-0 z-30 flex items-center justify-center bg-black/55 p-6">
+          <div className="max-w-lg rounded-2xl border border-[#D4AF37]/40 bg-[#0B0C10]/96 p-8 sm:p-10 text-center space-y-5">
+            <p className="text-xs font-medium tracking-[0.24em] text-[#D4AF37] uppercase">
+              {selectedTheaterConfig.theaterName} · Seat {selectedSeat.id}
+            </p>
+            <h2 className="font-display text-4xl sm:text-5xl font-semibold text-[#F4F1EA]">
+              YOUR SHOW HAS ENDED
+            </h2>
+            <p className="text-sm text-neutral-300 leading-relaxed">
+              The house lights have been restored. Thank you for screening with Aurelia Cinema.
+            </p>
+            <div className="flex flex-col sm:flex-row justify-center gap-3 pt-3">
+              <button
+                type="button"
+                onClick={handleRestartShow}
+                className="inline-flex items-center justify-center gap-2 rounded-md border border-white/20 px-5 py-3 text-xs font-semibold uppercase tracking-wider text-[#F4F1EA] hover:border-[#D4AF37] cursor-pointer"
+              >
+                <RotateCcw className="h-4 w-4" />
+                <span>Replay Screening</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleExitAndReturnHome}
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-[#D4AF37] px-6 py-3 text-xs font-semibold uppercase tracking-wider text-[#070709] hover:bg-[#E5C158] cursor-pointer"
+              >
+                <Home className="h-4 w-4" />
+                <span>Return Home</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Exit Confirmation Modal */}
+      {showExitConfirm && (
+        <div
+          className="absolute inset-0 z-40 flex items-center justify-center bg-black/75 p-6"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="w-full max-w-md rounded-xl border border-white/15 bg-[#0E0F13] p-6 space-y-4">
+            <h2 className="font-display text-2xl font-semibold text-[#F4F1EA]">
+              Leave the Auditorium?
+            </h2>
+            <p className="text-sm text-neutral-400">
+              Playback will stop and your screening session will return to the main lobby.
+            </p>
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setShowExitConfirm(false)}
+                className="rounded-md border border-white/15 px-4 py-2 text-xs font-semibold uppercase tracking-wider text-neutral-200 hover:bg-white/5 cursor-pointer"
+              >
+                Stay in Seat
+              </button>
+              <button
+                type="button"
+                onClick={handleExitAndReturnHome}
+                className="rounded-md bg-[#D4AF37] px-5 py-2 text-xs font-semibold uppercase tracking-wider text-[#070709] hover:bg-[#E5C158] cursor-pointer"
+              >
+                Leave & Return Home
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
