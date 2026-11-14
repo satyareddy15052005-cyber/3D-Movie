@@ -96,6 +96,7 @@ export const VirtualCinemaPage: React.FC = () => {
 
   const [autoplayBlocked, setAutoplayBlocked] = useState(false);
   const [playbackError, setPlaybackError] = useState<string | null>(null);
+  const [audioRunning, setAudioRunning] = useState(() => cinemaAudioEngine.isRunning);
 
   const inactivityTimerRef = useRef<number | null>(null);
   const showStartingTimerRef = useRef<number | null>(null);
@@ -109,13 +110,46 @@ export const VirtualCinemaPage: React.FC = () => {
     return activeDeckRef.current === 'A' ? deckARef.current : deckBRef.current;
   }, []);
 
+  // Track Web Audio running state + unlock audio cleanly on any mobile tap/touch/click gesture
+  useEffect(() => {
+    const unsubscribe = cinemaAudioEngine.onStateChange((running) => {
+      setAudioRunning(running);
+      if (running) {
+        if (deckARef.current) cinemaAudioEngine.attachVideoElement(deckARef.current);
+        if (deckBRef.current) cinemaAudioEngine.attachVideoElement(deckBRef.current);
+      }
+    });
+
+    const handleGestureUnlock = () => {
+      if (!cinemaAudioEngine.isRunning) {
+        cinemaAudioEngine.unlockFromGesture();
+        if (deckARef.current) cinemaAudioEngine.attachVideoElement(deckARef.current);
+        if (deckBRef.current) cinemaAudioEngine.attachVideoElement(deckBRef.current);
+      }
+    };
+
+    window.addEventListener('pointerdown', handleGestureUnlock, { capture: true, passive: true });
+    window.addEventListener('touchend', handleGestureUnlock, { capture: true, passive: true });
+    window.addEventListener('keydown', handleGestureUnlock, { capture: true });
+
+    return () => {
+      unsubscribe();
+      window.removeEventListener('pointerdown', handleGestureUnlock, { capture: true });
+      window.removeEventListener('touchend', handleGestureUnlock, { capture: true });
+      window.removeEventListener('keydown', handleGestureUnlock, { capture: true });
+    };
+  }, []);
+
   // Create persistent Dual-Deck HTMLVideoElements mounted INSIDE containerRef (so Fullscreen Top Layer never occludes or stalls decoding)
   useEffect(() => {
     const host = videoHostRef.current || containerRef.current || document.body;
     const createDeck = () => {
       const vid = document.createElement('video');
       vid.playsInline = true;
+      vid.setAttribute('playsinline', '');
+      vid.setAttribute('webkit-playsinline', '');
       vid.preload = 'auto';
+      vid.muted = false;
       vid.disableRemotePlayback = true;
       vid.style.width = '32px';
       vid.style.height = '18px';
@@ -215,13 +249,17 @@ export const VirtualCinemaPage: React.FC = () => {
       .catch(() => {});
   }, [selectedTheaterConfig]);
 
-  // Sync audio settings with Web Audio engine & fallback video elements
+  // Sync audio settings with Web Audio engine & native HTMLVideoElement fallback until AudioContext runs
   useEffect(() => {
     [deckARef.current, deckBRef.current].forEach((vid) => {
       if (!vid) return;
       vid.muted = audioSettings.muted;
-      if (!cinemaAudioEngine.initialized) {
-        vid.volume = audioSettings.masterVolume * audioSettings.videoVolume;
+      if (!cinemaAudioEngine.isVideoAttached(vid)) {
+        vid.volume = audioSettings.muted
+          ? 0
+          : audioSettings.masterVolume * audioSettings.videoVolume;
+      } else {
+        vid.volume = 1;
       }
     });
 
@@ -235,11 +273,12 @@ export const VirtualCinemaPage: React.FC = () => {
       windActive,
       fourDxSettings.vibrationIntensity,
     );
-  }, [audioSettings, showState, selectedTheaterConfig, fourDxSettings]);
+  }, [audioSettings, showState, selectedTheaterConfig, fourDxSettings, audioRunning]);
 
   // Begin the lighting dim -> video start sequence
   const beginShowSequence = useCallback(() => {
     if (showState !== 'AUDITORIUM_OPEN') return;
+    cinemaAudioEngine.unlockFromGesture();
     if (autoStartTimerRef.current) {
       window.clearTimeout(autoStartTimerRef.current);
       autoStartTimerRef.current = null;
@@ -440,9 +479,11 @@ export const VirtualCinemaPage: React.FC = () => {
     const vid = activeDeck === 'A' ? deckARef.current : deckBRef.current;
     if (!vid) return;
 
-    const onLoadedMetadata = () => {
+    const syncMetadataAndDuration = () => {
       if (Number.isFinite(vid.duration) && vid.duration > 0) {
         setDuration(vid.duration);
+      } else if (currentItem && currentItem.duration > 0) {
+        setDuration(currentItem.duration);
       }
       if (vid.videoWidth > 0 && vid.videoHeight > 0) {
         setVideoAspect(vid.videoWidth / vid.videoHeight);
@@ -453,6 +494,9 @@ export const VirtualCinemaPage: React.FC = () => {
       const t = vid.currentTime || 0;
       const d = Number.isFinite(vid.duration) ? vid.duration : 0;
       setCurrentTime(t);
+      if (d > 0) {
+        setDuration(d);
+      }
 
       if (
         selectedTheaterConfig?.supports4dxEffects &&
@@ -469,9 +513,25 @@ export const VirtualCinemaPage: React.FC = () => {
     };
 
     const onCanPlay = () => {
+      syncMetadataAndDuration();
       if (showState === 'SHOW_PLAYING' && !isPausedRef.current && vid.paused && !vid.ended) {
         cinemaAudioEngine.resume().catch(() => {});
         vid.play().catch(() => {});
+      }
+    };
+
+    const onPlayEvent = () => {
+      syncMetadataAndDuration();
+      setAutoplayBlocked(false);
+      if (isPausedRef.current) {
+        setIsPaused(false);
+      }
+    };
+
+    const onPauseEvent = () => {
+      if (showState === 'SHOW_PLAYING' && !vid.ended && !isPausedRef.current) {
+        // Keep store synced if mobile OS / headphone paused playback
+        if (document.visibilityState === 'hidden') return;
       }
     };
 
@@ -502,9 +562,14 @@ export const VirtualCinemaPage: React.FC = () => {
       }
     };
 
-    vid.addEventListener('loadedmetadata', onLoadedMetadata);
+    syncMetadataAndDuration();
+    vid.addEventListener('loadedmetadata', syncMetadataAndDuration);
+    vid.addEventListener('loadeddata', syncMetadataAndDuration);
+    vid.addEventListener('durationchange', syncMetadataAndDuration);
     vid.addEventListener('timeupdate', onTimeUpdate);
     vid.addEventListener('canplay', onCanPlay);
+    vid.addEventListener('play', onPlayEvent);
+    vid.addEventListener('pause', onPauseEvent);
     vid.addEventListener('waiting', onStallOrWait);
     vid.addEventListener('stalled', onStallOrWait);
     vid.addEventListener('ended', onEnded);
@@ -527,9 +592,13 @@ export const VirtualCinemaPage: React.FC = () => {
 
     return () => {
       window.clearInterval(watchdogId);
-      vid.removeEventListener('loadedmetadata', onLoadedMetadata);
+      vid.removeEventListener('loadedmetadata', syncMetadataAndDuration);
+      vid.removeEventListener('loadeddata', syncMetadataAndDuration);
+      vid.removeEventListener('durationchange', syncMetadataAndDuration);
       vid.removeEventListener('timeupdate', onTimeUpdate);
       vid.removeEventListener('canplay', onCanPlay);
+      vid.removeEventListener('play', onPlayEvent);
+      vid.removeEventListener('pause', onPauseEvent);
       vid.removeEventListener('waiting', onStallOrWait);
       vid.removeEventListener('stalled', onStallOrWait);
       vid.removeEventListener('ended', onEnded);
@@ -543,6 +612,7 @@ export const VirtualCinemaPage: React.FC = () => {
     fourDxSettings,
     autoplayBlocked,
     advancePlaylistOrComplete,
+    setIsPaused,
   ]);
 
   // Mid-show click-on-seat shifting
@@ -588,7 +658,7 @@ export const VirtualCinemaPage: React.FC = () => {
         if (!isHoveringHudRef.current) {
           setHudVisible(false);
         }
-      }, 5500);
+      }, 7500);
     }
   }, [showState, isPaused, showMixerPopover, show4dxPopover, showExitConfirm, viewMode]);
 
@@ -668,8 +738,10 @@ export const VirtualCinemaPage: React.FC = () => {
   const togglePlayPause = () => {
     const vid = getActiveVideoEl();
     if (!vid) return;
+    cinemaAudioEngine.unlockFromGesture();
     if (vid.paused) {
-      cinemaAudioEngine.resume().catch(() => {});
+      cinemaAudioEngine.attachVideoElement(vid);
+      vid.muted = audioSettings.muted;
       vid
         .play()
         .then(() => {
@@ -684,6 +756,7 @@ export const VirtualCinemaPage: React.FC = () => {
   };
 
   const handleRestartShow = () => {
+    cinemaAudioEngine.unlockFromGesture();
     advancingForIndexRef.current = null;
     const vidA = deckARef.current;
     const vidB = deckBRef.current;
@@ -712,12 +785,15 @@ export const VirtualCinemaPage: React.FC = () => {
     setShowState('SHOW_PLAYING');
   };
 
-  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement> | React.FormEvent<HTMLInputElement>) => {
     const vid = getActiveVideoEl();
     if (!vid) return;
-    const nextTime = parseFloat(e.target.value);
+    const target = e.currentTarget;
+    const nextTime = parseFloat(target.value);
+    if (!Number.isFinite(nextTime)) return;
     vid.currentTime = nextTime;
     setCurrentTime(nextTime);
+    bumpHudActivity();
   };
 
   const toggleFullscreen = async () => {
@@ -736,6 +812,7 @@ export const VirtualCinemaPage: React.FC = () => {
     const vid = getActiveVideoEl();
     if (!vid) return;
     try {
+      cinemaAudioEngine.unlockFromGesture();
       const seatOffsetRatio =
         selectedSeat.worldPosition[0] /
         Math.max(1, selectedTheaterConfig.auditoriumWidth / 2);
@@ -745,12 +822,29 @@ export const VirtualCinemaPage: React.FC = () => {
         selectedTheaterConfig,
       );
       cinemaAudioEngine.attachVideoElement(vid);
+      vid.muted = audioSettings.muted;
       await vid.play();
       setAutoplayBlocked(false);
       setIsPaused(false);
     } catch {
       setPlaybackError('Unable to start browser media playback.');
     }
+  };
+
+  const handleEnableMobileAudio = () => {
+    cinemaAudioEngine.unlockFromGesture();
+    const vid = getActiveVideoEl();
+    if (vid) {
+      cinemaAudioEngine.attachVideoElement(vid);
+      vid.muted = false;
+      if (vid.paused && !isPaused) {
+        vid.play().catch(() => {});
+      }
+    }
+    if (audioSettings.muted) {
+      updateAudioSettings({ muted: false });
+    }
+    bumpHudActivity();
   };
 
   const handleExitAndReturnHome = () => {
@@ -786,6 +880,7 @@ export const VirtualCinemaPage: React.FC = () => {
     <div
       ref={containerRef}
       onMouseMove={bumpHudActivity}
+      onPointerDown={bumpHudActivity}
       onTouchStart={bumpHudActivity}
       className="relative h-screen w-screen overflow-hidden bg-[#040406] text-[#F4F1EA] select-none"
     >
@@ -844,14 +939,17 @@ export const VirtualCinemaPage: React.FC = () => {
 
       {/* Entrance Walk Prompt */}
       {sceneReady && !entranceComplete && (
-        <div className="absolute bottom-8 left-1/2 z-30 -translate-x-1/2 flex items-center gap-4 rounded-lg border border-white/15 bg-[#090A0E]/92 px-5 py-3">
-          <span className="text-xs text-neutral-300">
+        <div className="absolute bottom-6 left-1/2 z-30 w-[min(92vw,380px)] -translate-x-1/2 flex items-center justify-between gap-3 rounded-lg border border-white/15 bg-[#090A0E]/92 px-4 py-2.5">
+          <span className="text-[11px] sm:text-xs text-neutral-300 truncate">
             Walking to Seat <strong className="text-[#E5C158]">{selectedSeat.id}</strong>
           </span>
           <button
             type="button"
-            onClick={() => setSkipWalkSignal((n) => n + 1)}
-            className="rounded border border-white/20 px-3 py-1 text-[11px] font-medium text-[#F4F1EA] hover:border-[#D4AF37] cursor-pointer"
+            onClick={() => {
+              cinemaAudioEngine.unlockFromGesture();
+              setSkipWalkSignal((n) => n + 1);
+            }}
+            className="shrink-0 rounded border border-white/20 px-3 py-1 text-[11px] font-medium text-[#F4F1EA] hover:border-[#D4AF37] cursor-pointer"
           >
             Skip to Seat
           </button>
@@ -860,15 +958,15 @@ export const VirtualCinemaPage: React.FC = () => {
 
       {/* Seated Pre-Show Banner (before lights dim) */}
       {sceneReady && entranceComplete && showState === 'AUDITORIUM_OPEN' && (
-        <div className="absolute bottom-28 left-1/2 z-30 -translate-x-1/2 flex flex-col items-center gap-3 rounded-xl border border-white/15 bg-[#090A0E]/92 px-6 py-4 text-center">
-          <p className="text-xs text-neutral-300">
+        <div className="absolute bottom-36 sm:bottom-28 left-1/2 z-30 w-[min(92vw,440px)] -translate-x-1/2 flex flex-col items-center gap-2.5 sm:gap-3 rounded-xl border border-white/15 bg-[#090A0E]/92 px-4 py-3.5 sm:px-6 sm:py-4 text-center">
+          <p className="text-[11px] sm:text-xs text-neutral-300 leading-relaxed">
             Seated in <strong className="text-[#E5C158]">{selectedSeat.id}</strong> · Drag to look
-            360° around the hall or click any seat to shift
+            360° around the hall or tap any seat to shift
           </p>
           <button
             type="button"
             onClick={beginShowSequence}
-            className="inline-flex items-center gap-2 rounded-md bg-[#D4AF37] px-5 py-2 text-xs font-semibold uppercase tracking-wider text-[#070709] hover:bg-[#E5C158] cursor-pointer"
+            className="inline-flex items-center gap-2 rounded-md bg-[#D4AF37] px-5 py-2 text-[11px] sm:text-xs font-semibold uppercase tracking-wider text-[#070709] hover:bg-[#E5C158] cursor-pointer"
           >
             <Play className="h-3.5 w-3.5 fill-current" />
             <span>Dim Lights & Start Show</span>
@@ -876,29 +974,47 @@ export const VirtualCinemaPage: React.FC = () => {
         </div>
       )}
 
+      {/* Mobile Audio Unlock Prompt if OS kept Web Audio suspended during playback */}
+      {showState === 'SHOW_PLAYING' &&
+        !isPaused &&
+        !audioSettings.muted &&
+        !audioRunning &&
+        !autoplayBlocked && (
+          <div className="absolute top-24 sm:top-16 left-1/2 z-30 -translate-x-1/2">
+            <button
+              type="button"
+              onClick={handleEnableMobileAudio}
+              className="inline-flex items-center gap-2 rounded-lg border border-[#D4AF37]/60 bg-[#090A0E]/94 px-4 py-2 text-xs font-semibold text-[#E5C158] shadow-lg cursor-pointer hover:bg-[#D4AF37] hover:text-[#070709] transition-colors whitespace-nowrap"
+            >
+              <Volume2 className="h-3.5 w-3.5" />
+              <span>Tap to Enable Dolby Audio</span>
+            </button>
+          </div>
+        )}
+
       {/* Show Starting Transition Indicator */}
       {showState === 'SHOW_STARTING' && (
-        <div className="pointer-events-none absolute top-6 left-1/2 z-20 -translate-x-1/2 rounded-lg border border-white/10 bg-[#090A0E]/85 px-4 py-2 text-xs text-neutral-300">
-          Dimming auditorium lights · Starting feature presentation
+        <div className="pointer-events-none absolute top-24 sm:top-16 left-1/2 z-20 w-max max-w-[90vw] -translate-x-1/2 rounded-lg border border-white/10 bg-[#090A0E]/88 px-4 py-2 text-center text-[11px] sm:text-xs text-neutral-300">
+          Dimming auditorium lights · Starting presentation
         </div>
       )}
 
       {/* Paused House Lights Indicator */}
       {showState === 'SHOW_PLAYING' && isPaused && !showCompleted && (
-        <div className="pointer-events-none absolute top-6 left-1/2 z-20 -translate-x-1/2 rounded-lg border border-[#D4AF37]/35 bg-[#090A0E]/88 px-4 py-1.5 text-xs text-[#E5C158]">
+        <div className="pointer-events-none absolute top-24 sm:top-16 left-1/2 z-20 -translate-x-1/2 rounded-lg border border-[#D4AF37]/35 bg-[#090A0E]/88 px-3.5 py-1.5 text-[11px] sm:text-xs text-[#E5C158] whitespace-nowrap">
           Paused · House Lights On
         </div>
       )}
 
       {/* Mid-show Interactive Seat Hover / Shift Notification */}
       {entranceComplete && hoveredSeatId && hoveredSeatId !== selectedSeat.id && (
-        <div className="pointer-events-none absolute top-16 left-1/2 z-20 -translate-x-1/2 rounded-lg border border-[#38bdf8]/45 bg-[#090A0E]/92 px-4 py-1.5 text-xs text-[#bae6fd]">
-          Click to shift to Seat <strong className="text-white">{hoveredSeatId}</strong>
+        <div className="pointer-events-none absolute top-24 sm:top-16 left-1/2 z-20 -translate-x-1/2 rounded-lg border border-[#38bdf8]/45 bg-[#090A0E]/92 px-3.5 py-1.5 text-[11px] sm:text-xs text-[#bae6fd] whitespace-nowrap">
+          Tap to shift to Seat <strong className="text-white">{hoveredSeatId}</strong>
         </div>
       )}
 
       {seatShiftToast && !hoveredSeatId && (
-        <div className="pointer-events-none absolute top-16 left-1/2 z-20 -translate-x-1/2 rounded-lg border border-[#D4AF37]/45 bg-[#090A0E]/92 px-4 py-1.5 text-xs text-[#E5C158]">
+        <div className="pointer-events-none absolute top-24 sm:top-16 left-1/2 z-20 -translate-x-1/2 rounded-lg border border-[#D4AF37]/45 bg-[#090A0E]/92 px-3.5 py-1.5 text-[11px] sm:text-xs text-[#E5C158] whitespace-nowrap">
           {seatShiftToast}
         </div>
       )}
@@ -909,7 +1025,7 @@ export const VirtualCinemaPage: React.FC = () => {
           <div className="max-w-md rounded-xl border border-[#D4AF37]/40 bg-[#0E0F13] p-6 text-center space-y-4">
             <h2 className="font-display text-2xl text-[#F4F1EA]">Start Projection & Audio</h2>
             <p className="text-sm text-neutral-300">
-              Your browser paused automatic audio playback after the walk-in sequence. Click below
+              Your browser paused automatic audio playback after the walk-in sequence. Tap below
               to start your video with full Web Audio sound.
             </p>
             <button
@@ -953,6 +1069,11 @@ export const VirtualCinemaPage: React.FC = () => {
 
       {/* Top-Left & Top-Right Corner Controls */}
       <div
+        onPointerDown={(e) => e.stopPropagation()}
+        onTouchStart={(e) => {
+          e.stopPropagation();
+          bumpHudActivity();
+        }}
         onMouseEnter={() => {
           isHoveringHudRef.current = true;
           bumpHudActivity();
@@ -961,7 +1082,7 @@ export const VirtualCinemaPage: React.FC = () => {
           isHoveringHudRef.current = false;
           bumpHudActivity();
         }}
-        className={`absolute top-4 left-4 right-4 z-20 flex flex-wrap items-center justify-between gap-2 transition-opacity duration-300 ${
+        className={`absolute top-3 left-3 right-3 sm:top-4 sm:left-4 sm:right-4 z-20 flex flex-wrap items-center justify-between gap-2 transition-opacity duration-300 ${
           effectiveHudVisible
             ? 'opacity-100'
             : controlsManuallyHidden
@@ -969,20 +1090,20 @@ export const VirtualCinemaPage: React.FC = () => {
               : 'opacity-0 hover:opacity-100'
         }`}
       >
-        <div className="rounded-lg border border-white/10 bg-[#090A0E]/88 px-3.5 py-2 text-xs">
+        <div className="max-w-[52vw] sm:max-w-none truncate rounded-lg border border-white/10 bg-[#090A0E]/88 px-2.5 py-1.5 sm:px-3.5 sm:py-2 text-[11px] sm:text-xs">
           <span className="font-medium text-[#F4F1EA]">{selectedTheaterConfig.shortName}</span>
-          <span className="mx-2 text-neutral-600">·</span>
+          <span className="mx-1.5 sm:mx-2 text-neutral-600">·</span>
           <span className="font-mono-tabular text-[#E5C158]">Seat {selectedSeat.id}</span>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-1.5 sm:gap-2">
           {/* View Mode Switcher: Seat / Hall (Click Any Seat) / Full Screen */}
           {entranceComplete && (
-            <div className="flex items-center rounded-lg border border-white/10 bg-[#090A0E]/88 p-0.5 text-xs">
+            <div className="flex items-center rounded-lg border border-white/10 bg-[#090A0E]/88 p-0.5 text-[11px] sm:text-xs">
               <button
                 type="button"
                 onClick={() => setViewMode('seat')}
-                className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 cursor-pointer transition-colors ${
+                className={`inline-flex items-center gap-1 sm:gap-1.5 rounded-md px-2 sm:px-2.5 py-1 sm:py-1.5 cursor-pointer transition-colors ${
                   viewMode === 'seat'
                     ? 'bg-[#D4AF37] text-[#070709] font-semibold'
                     : 'text-neutral-300 hover:text-white'
@@ -994,7 +1115,7 @@ export const VirtualCinemaPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setViewMode('hall')}
-                className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 cursor-pointer transition-colors ${
+                className={`inline-flex items-center gap-1 sm:gap-1.5 rounded-md px-2 sm:px-2.5 py-1 sm:py-1.5 cursor-pointer transition-colors ${
                   viewMode === 'hall'
                     ? 'bg-[#D4AF37] text-[#070709] font-semibold'
                     : 'text-neutral-300 hover:text-white'
@@ -1006,13 +1127,14 @@ export const VirtualCinemaPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setViewMode('screen_full')}
-                className={`inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 cursor-pointer transition-colors ${
+                className={`inline-flex items-center gap-1 sm:gap-1.5 rounded-md px-2 sm:px-2.5 py-1 sm:py-1.5 cursor-pointer transition-colors ${
                   viewMode === 'screen_full'
                     ? 'bg-[#D4AF37] text-[#070709] font-semibold'
                     : 'text-neutral-300 hover:text-white'
                 }`}
               >
                 <Maximize2 className="h-3.5 w-3.5" />
+                <span className="sm:hidden">Full</span>
                 <span className="hidden sm:inline">Full Screen</span>
               </button>
             </div>
@@ -1023,7 +1145,8 @@ export const VirtualCinemaPage: React.FC = () => {
               type="button"
               onClick={() => setResetViewSignal((n) => n + 1)}
               title="Reset View to Screen Center"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-[#090A0E]/88 px-3 py-2 text-xs text-neutral-200 hover:border-[#D4AF37]/60 cursor-pointer"
+              aria-label="Reset View to Screen Center"
+              className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-[#090A0E]/88 px-2.5 py-1.5 sm:px-3 sm:py-2 text-xs text-neutral-200 hover:border-[#D4AF37]/60 cursor-pointer"
             >
               <Compass className="h-3.5 w-3.5 text-[#D4AF37]" />
               <span className="hidden md:inline">Reset View</span>
@@ -1033,7 +1156,8 @@ export const VirtualCinemaPage: React.FC = () => {
           <button
             type="button"
             onClick={() => setShowExitConfirm(true)}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-[#090A0E]/88 px-3 py-2 text-xs text-neutral-200 hover:border-red-400/60 hover:text-red-300 cursor-pointer"
+            aria-label="Exit Show"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-[#090A0E]/88 px-2.5 py-1.5 sm:px-3 sm:py-2 text-xs text-neutral-200 hover:border-red-400/60 hover:text-red-300 cursor-pointer"
           >
             <LogOut className="h-3.5 w-3.5" />
             <span className="hidden sm:inline">Exit Show</span>
@@ -1043,8 +1167,8 @@ export const VirtualCinemaPage: React.FC = () => {
 
       {/* Hall View Instruction Hint */}
       {entranceComplete && viewMode === 'hall' && !showCompleted && (
-        <div className="pointer-events-none absolute bottom-32 left-1/2 z-20 -translate-x-1/2 rounded-lg border border-white/15 bg-[#090A0E]/90 px-4 py-1.5 text-xs text-neutral-200">
-          Drag to orbit · Scroll to zoom · Click any available seat to shift there
+        <div className="pointer-events-none absolute bottom-36 sm:bottom-32 left-1/2 z-20 w-max max-w-[90vw] -translate-x-1/2 rounded-lg border border-white/15 bg-[#090A0E]/90 px-3.5 py-1.5 text-center text-[11px] sm:text-xs text-neutral-200">
+          Drag to orbit · Pinch or scroll to zoom · Tap any seat to shift
         </div>
       )}
 
@@ -1053,7 +1177,7 @@ export const VirtualCinemaPage: React.FC = () => {
         <button
           type="button"
           onClick={() => setControlsManuallyHidden(false)}
-          className="absolute bottom-4 right-4 z-20 inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-[#090A0E]/85 px-3 py-2 text-xs text-neutral-300 hover:text-white cursor-pointer"
+          className="absolute bottom-3 right-3 sm:bottom-4 sm:right-4 z-20 inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-[#090A0E]/85 px-3 py-2 text-xs text-neutral-300 hover:text-white cursor-pointer"
         >
           <Eye className="h-3.5 w-3.5" />
           <span>Show Controls</span>
@@ -1063,6 +1187,11 @@ export const VirtualCinemaPage: React.FC = () => {
       {/* Minimal Bottom Cinema Control Dock */}
       {!showCompleted && entranceComplete && (
         <div
+          onPointerDown={(e) => e.stopPropagation()}
+          onTouchStart={(e) => {
+            e.stopPropagation();
+            bumpHudActivity();
+          }}
           onMouseEnter={() => {
             isHoveringHudRef.current = true;
             bumpHudActivity();
@@ -1071,13 +1200,13 @@ export const VirtualCinemaPage: React.FC = () => {
             isHoveringHudRef.current = false;
             bumpHudActivity();
           }}
-          className={`absolute bottom-4 left-1/2 z-20 w-[min(940px,95vw)] -translate-x-1/2 transition-opacity duration-300 ${
+          className={`absolute bottom-2.5 sm:bottom-4 left-1/2 z-20 w-[min(940px,96vw)] -translate-x-1/2 transition-opacity duration-300 ${
             effectiveHudVisible ? 'opacity-100' : 'opacity-0 pointer-events-none'
           }`}
         >
           {/* Audio & Screen Reflection Mixer Popover */}
           {showMixerPopover && (
-            <div className="mb-2.5 ml-auto w-76 rounded-xl border border-white/15 bg-[#0B0C10]/96 p-4 space-y-3 text-xs">
+            <div className="mb-2 ml-auto w-full sm:w-80 rounded-xl border border-white/15 bg-[#0B0C10]/96 p-4 space-y-3 text-xs">
               <div className="flex items-center justify-between border-b border-white/10 pb-2">
                 <span className="font-semibold text-[#F4F1EA]">Audio &amp; Visual Mixer</span>
                 <button
@@ -1087,6 +1216,29 @@ export const VirtualCinemaPage: React.FC = () => {
                 >
                   Close
                 </button>
+              </div>
+              <div>
+                <div className="flex justify-between text-neutral-300 mb-1">
+                  <span>Master Volume</span>
+                  <span className="font-mono-tabular">
+                    {audioSettings.muted ? 'Muted' : `${Math.round(audioSettings.masterVolume * 100)}%`}
+                  </span>
+                </div>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={audioSettings.muted ? 0 : audioSettings.masterVolume}
+                  onChange={(e) => {
+                    cinemaAudioEngine.unlockFromGesture();
+                    updateAudioSettings({
+                      masterVolume: parseFloat(e.target.value),
+                      muted: false,
+                    });
+                  }}
+                  className="w-full touch-none accent-[#D4AF37]"
+                />
               </div>
               <div>
                 <div className="flex justify-between text-neutral-300 mb-1">
@@ -1101,10 +1253,11 @@ export const VirtualCinemaPage: React.FC = () => {
                   max={1}
                   step={0.05}
                   value={audioSettings.videoVolume}
-                  onChange={(e) =>
-                    updateAudioSettings({ videoVolume: parseFloat(e.target.value) })
-                  }
-                  className="w-full accent-[#D4AF37]"
+                  onChange={(e) => {
+                    cinemaAudioEngine.unlockFromGesture();
+                    updateAudioSettings({ videoVolume: parseFloat(e.target.value) });
+                  }}
+                  className="w-full touch-none accent-[#D4AF37]"
                 />
               </div>
               <div>
@@ -1183,7 +1336,7 @@ export const VirtualCinemaPage: React.FC = () => {
 
           {/* 4DX Theme-Park Motion & Wind Controls Popover */}
           {show4dxPopover && selectedTheaterConfig.supports4dxEffects && (
-            <div className="mb-2.5 ml-auto w-80 rounded-xl border border-white/15 bg-[#0B0C10]/96 p-4 space-y-3 text-xs">
+            <div className="mb-2 ml-auto w-full sm:w-80 rounded-xl border border-white/15 bg-[#0B0C10]/96 p-4 space-y-3 text-xs">
               <div className="flex items-center justify-between border-b border-white/10 pb-2">
                 <span className="font-semibold text-[#F4F1EA]">
                   4DX Motion & Effects
@@ -1273,33 +1426,38 @@ export const VirtualCinemaPage: React.FC = () => {
           )}
 
           {/* Main Compact Control Bar */}
-          <div className="rounded-xl border border-white/12 bg-[#090A0E]/92 px-4 py-3 space-y-2.5">
-            {/* Video Progress Scrubber */}
-            <div className="flex items-center gap-3 text-[11px] font-mono-tabular text-neutral-400">
-              <span className="w-12 text-right">{formatDuration(currentTime)}</span>
+          <div className="rounded-xl border border-white/12 bg-[#090A0E]/92 px-3 py-2.5 sm:px-4 sm:py-3 space-y-2">
+            {/* Video Progress Scrubber & Exact Timing */}
+            <div className="flex items-center gap-2 sm:gap-3 text-[11px] font-mono-tabular text-neutral-300">
+              <span className="min-w-[38px] text-right shrink-0">
+                {formatDuration(currentTime)}
+              </span>
               <input
                 type="range"
                 min={0}
                 max={Math.max(duration, 0.1)}
-                step={0.25}
-                value={Math.min(currentTime, duration || 0)}
+                step={0.1}
+                value={Math.min(currentTime, Math.max(duration, 0.1))}
+                onInput={handleSeek}
                 onChange={handleSeek}
                 disabled={showState !== 'SHOW_PLAYING'}
                 aria-label="Video playback progress"
-                className="flex-1 accent-[#D4AF37] cursor-pointer"
+                className="h-5 flex-1 touch-none accent-[#D4AF37] cursor-pointer"
               />
-              <span className="w-12">{formatDuration(duration)}</span>
+              <span className="min-w-[38px] shrink-0 text-neutral-400">
+                {formatDuration(duration)}
+              </span>
             </div>
 
             {/* Buttons & Playlist Readout */}
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-2 min-w-0">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 flex-1">
                 <button
                   type="button"
                   onClick={togglePlayPause}
                   disabled={showState !== 'SHOW_PLAYING'}
                   aria-label={isPaused ? 'Resume playback' : 'Pause playback'}
-                  className="flex h-9 w-9 items-center justify-center rounded-md bg-[#D4AF37] text-[#070709] hover:bg-[#E5C158] disabled:opacity-40 cursor-pointer shrink-0"
+                  className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-md bg-[#D4AF37] text-[#070709] hover:bg-[#E5C158] disabled:opacity-40 cursor-pointer shrink-0"
                 >
                   {isPaused ? (
                     <Play className="h-4 w-4 fill-current" />
@@ -1313,23 +1471,24 @@ export const VirtualCinemaPage: React.FC = () => {
                   onClick={handleRestartShow}
                   title="Restart Show"
                   aria-label="Restart show"
-                  className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 text-neutral-300 hover:text-white cursor-pointer shrink-0"
+                  className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-md border border-white/10 text-neutral-300 hover:text-white cursor-pointer shrink-0"
                 >
-                  <RotateCcw className="h-4 w-4" />
+                  <RotateCcw className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                 </button>
 
-                <div className="min-w-0 pl-1">
-                  <p className="truncate text-xs font-medium text-[#F4F1EA] max-w-[160px] sm:max-w-[230px]">
+                <div className="min-w-0 flex-1 pl-0.5 sm:pl-1">
+                  <p className="truncate text-[11px] sm:text-xs font-medium text-[#F4F1EA]">
                     {currentItem ? currentItem.fileName : 'Loading'}
                   </p>
-                  <p className="font-mono-tabular text-[11px] text-neutral-400">
-                    Item {String(currentPlaybackIndex + 1).padStart(2, '0')} /{' '}
+                  <p className="font-mono-tabular text-[10px] sm:text-[11px] text-neutral-400">
+                    {String(currentPlaybackIndex + 1).padStart(2, '0')} /{' '}
                     {String(playlist.length).padStart(2, '0')}
+                    <span className="hidden sm:inline"> · Local Screening</span>
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                 {/* Screen Fill vs Aspect Fit Toggle */}
                 <button
                   type="button"
@@ -1341,10 +1500,15 @@ export const VirtualCinemaPage: React.FC = () => {
                       ? 'Screen framing: Fill entire projection screen (click for Fit)'
                       : 'Screen framing: Fit original aspect ratio (click for Fill)'
                   }
-                  className="inline-flex items-center gap-1 rounded-md border border-white/10 px-2.5 py-2 text-[11px] text-neutral-200 hover:border-[#D4AF37]/60 cursor-pointer"
+                  className="inline-flex h-8 sm:h-9 items-center gap-1 rounded-md border border-white/10 px-2 sm:px-2.5 text-[11px] text-neutral-200 hover:border-[#D4AF37]/60 cursor-pointer"
                 >
                   <Monitor className="h-3.5 w-3.5 text-[#D4AF37]" />
-                  <span>{screenFraming === 'fill' ? 'Fill Screen' : 'Fit Frame'}</span>
+                  <span className="sm:hidden">
+                    {screenFraming === 'fill' ? 'Fill' : 'Fit'}
+                  </span>
+                  <span className="hidden sm:inline">
+                    {screenFraming === 'fill' ? 'Fill Screen' : 'Fit Frame'}
+                  </span>
                 </button>
 
                 {/* 4DX Effects Trigger */}
@@ -1355,7 +1519,7 @@ export const VirtualCinemaPage: React.FC = () => {
                       setShow4dxPopover((v) => !v);
                       setShowMixerPopover(false);
                     }}
-                    className={`inline-flex items-center gap-1 rounded-md border px-2.5 py-2 text-[11px] cursor-pointer ${
+                    className={`inline-flex h-8 sm:h-9 items-center gap-1 rounded-md border px-2 sm:px-2.5 text-[11px] cursor-pointer ${
                       fourDxSettings.enabled
                         ? 'border-[#38bdf8]/60 bg-[#38bdf8]/15 text-[#7dd3fc]'
                         : 'border-white/10 text-neutral-300 hover:text-white'
@@ -1369,9 +1533,12 @@ export const VirtualCinemaPage: React.FC = () => {
                 {/* Mute & Master Volume */}
                 <button
                   type="button"
-                  onClick={() => updateAudioSettings({ muted: !audioSettings.muted })}
+                  onClick={() => {
+                    cinemaAudioEngine.unlockFromGesture();
+                    updateAudioSettings({ muted: !audioSettings.muted });
+                  }}
                   aria-label={audioSettings.muted ? 'Unmute' : 'Mute'}
-                  className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 text-neutral-300 hover:text-white cursor-pointer"
+                  className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-md border border-white/10 text-neutral-300 hover:text-white cursor-pointer"
                 >
                   {audioSettings.muted ? (
                     <VolumeX className="h-4 w-4 text-red-400" />
@@ -1393,7 +1560,7 @@ export const VirtualCinemaPage: React.FC = () => {
                     })
                   }
                   aria-label="Master Volume"
-                  className="hidden sm:block w-20 accent-[#D4AF37] cursor-pointer"
+                  className="hidden md:block w-20 accent-[#D4AF37] cursor-pointer"
                 />
 
                 <button
@@ -1402,11 +1569,11 @@ export const VirtualCinemaPage: React.FC = () => {
                     setShowMixerPopover((v) => !v);
                     setShow4dxPopover(false);
                   }}
-                  title="Audio Mixer"
+                  title="Audio & Visual Mixer"
                   aria-label="Open audio mixer"
-                  className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 text-neutral-300 hover:text-white cursor-pointer"
+                  className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-md border border-white/10 text-neutral-300 hover:text-white cursor-pointer"
                 >
-                  <Sliders className="h-4 w-4" />
+                  <Sliders className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                 </button>
 
                 <button
@@ -1414,9 +1581,9 @@ export const VirtualCinemaPage: React.FC = () => {
                   onClick={() => setControlsManuallyHidden(true)}
                   title="Hide Controls (H)"
                   aria-label="Hide controls"
-                  className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 text-neutral-300 hover:text-white cursor-pointer"
+                  className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-md border border-white/10 text-neutral-300 hover:text-white cursor-pointer"
                 >
-                  <EyeOff className="h-4 w-4" />
+                  <EyeOff className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                 </button>
 
                 <button
@@ -1424,12 +1591,12 @@ export const VirtualCinemaPage: React.FC = () => {
                   onClick={toggleFullscreen}
                   title={isFullscreen ? 'Exit Browser Fullscreen' : 'Enter Browser Fullscreen'}
                   aria-label={isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'}
-                  className="flex h-9 w-9 items-center justify-center rounded-md border border-white/10 text-neutral-300 hover:text-white cursor-pointer"
+                  className="flex h-8 w-8 sm:h-9 sm:w-9 items-center justify-center rounded-md border border-white/10 text-neutral-300 hover:text-white cursor-pointer"
                 >
                   {isFullscreen ? (
-                    <Minimize className="h-4 w-4" />
+                    <Minimize className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                   ) : (
-                    <Maximize className="h-4 w-4" />
+                    <Maximize className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                   )}
                 </button>
               </div>

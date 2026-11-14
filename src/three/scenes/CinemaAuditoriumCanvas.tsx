@@ -17,7 +17,11 @@ import { FourDxEffectsRig } from '../models/FourDxEffectsRig';
 import { CinemaLightingRig } from '../lighting/CinemaLightingRig';
 import { createScreenBounceUniforms } from '../lighting/screenBounceShader';
 import { FirstPersonCameraRig } from '../cameras/FirstPersonCameraRig';
-import { detectWebGLSupport } from '../../utils/formatters';
+import {
+  computeAdaptiveCinemaFov,
+  detectWebGLSupport,
+  isMobileDevice,
+} from '../../utils/formatters';
 
 interface CinemaAuditoriumCanvasProps {
   config: TheaterConfiguration;
@@ -111,14 +115,21 @@ export const CinemaAuditoriumCanvas: React.FC<CinemaAuditoriumCanvasProps> = Rea
     );
   }
 
-  // Cap DPR at 1.5 max so Fullscreen on Retina/4K displays stays 60fps smooth without video stutter
+  // Use crisp Retina DPR on mobile & desktop hardware GPUs while capping overhead for 60fps video smoothness
+  const isMobile = isMobileDevice();
   const dpr: number | [number, number] = webglInfo.isSoftwareGl
     ? 0.75
     : graphicsQuality === 'low'
-      ? [1, 1]
+      ? [1, 1.35]
       : graphicsQuality === 'medium'
-        ? [1, 1.25]
-        : [1, 1.5];
+        ? [1, 1.75]
+        : [1, 2];
+
+  const initialFov = computeAdaptiveCinemaFov(
+    config.categoryId,
+    typeof window !== 'undefined' ? window.innerWidth : 1280,
+    typeof window !== 'undefined' ? window.innerHeight : 720,
+  );
 
   const isPlaying = showState === 'SHOW_PLAYING';
   const isActivelyPlaying = isPlaying && !isPaused;
@@ -143,15 +154,15 @@ export const CinemaAuditoriumCanvas: React.FC<CinemaAuditoriumCanvasProps> = Rea
       )}
 
       <Canvas
-        shadows={!webglInfo.isSoftwareGl && graphicsQuality !== 'low'}
+        shadows={!webglInfo.isSoftwareGl && graphicsQuality === 'high' && !isMobile}
         dpr={dpr}
         gl={{
-          antialias: !webglInfo.isSoftwareGl && graphicsQuality !== 'low',
+          antialias: !webglInfo.isSoftwareGl,
           powerPreference: 'high-performance',
           toneMapping: THREE.ACESFilmicToneMapping,
           toneMappingExposure: 1.05,
         }}
-        camera={{ fov: 54, near: 0.1, far: 140 }}
+        camera={{ fov: initialFov, near: 0.1, far: 140 }}
         onCreated={({ gl }) => {
           gl.outputColorSpace = THREE.SRGBColorSpace;
           const canvas = gl.domElement;

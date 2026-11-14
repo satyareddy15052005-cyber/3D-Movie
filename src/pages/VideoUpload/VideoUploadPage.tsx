@@ -293,7 +293,7 @@ export const VideoUploadPage: React.FC = () => {
                 handleFilesSelected(e.dataTransfer.files);
               }}
               onClick={() => !processingLabel && fileInputRef.current?.click()}
-              className={`rounded-xl border-2 border-dashed p-8 text-center transition-colors cursor-pointer ${
+              className={`rounded-xl border-2 border-dashed p-5 sm:p-8 text-center transition-colors cursor-pointer ${
                 isDraggingFiles
                   ? 'border-[#D4AF37] bg-[#D4AF37]/10'
                   : 'border-white/15 bg-[#0E0F13] hover:border-[#D4AF37]/60'
@@ -471,11 +471,11 @@ export const VideoUploadPage: React.FC = () => {
 
           {/* Right: Live Local Video Preview & Continue */}
           <div className="lg:col-span-5 rounded-xl border border-white/[0.08] bg-[#0E0F13] p-6 space-y-6">
-            <div className="space-y-1">
+            <div className="min-w-0 space-y-1">
               <p className="text-xs font-medium tracking-[0.18em] text-[#D4AF37] uppercase">
                 Local Video Monitor
               </p>
-              <h3 className="font-display text-2xl font-semibold text-[#F4F1EA]">
+              <h3 className="font-display text-xl sm:text-2xl font-semibold text-[#F4F1EA] truncate">
                 {activePreview ? activePreview.fileName : 'Awaiting Video Upload'}
               </h3>
             </div>

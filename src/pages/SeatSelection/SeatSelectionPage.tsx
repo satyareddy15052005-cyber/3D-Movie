@@ -117,9 +117,12 @@ export const SeatSelectionPage: React.FC = () => {
                   config.screenCurvature > 0.15 ? 'scale-y-125' : ''
                 }`}
               />
-              <p className="mt-2 text-xs font-medium tracking-[0.25em] text-neutral-400 uppercase">
+              <p className="mt-2 text-xs font-medium tracking-[0.2em] sm:tracking-[0.25em] text-neutral-400 uppercase">
                 Screen · {config.screenWidth}m × {config.screenHeight}m
                 {config.screenCurvature > 0 ? ' Curved Projection' : ' Flat Projection'}
+              </p>
+              <p className="mt-1.5 text-[11px] text-neutral-500 sm:hidden">
+                Swipe left or right to view all seats in the row
               </p>
             </div>
 

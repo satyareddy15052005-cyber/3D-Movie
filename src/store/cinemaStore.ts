@@ -27,7 +27,8 @@ import {
 } from '../services/media/videoProcessor';
 import { detectDefaultGraphicsQuality } from '../utils/formatters';
 
-const PREFS_STORAGE_KEY = 'aurelia_cinema_prefs_v1';
+const PREFS_STORAGE_KEY = 'aurelia_cinema_prefs_v2';
+const LEGACY_PREFS_STORAGE_KEY = 'aurelia_cinema_prefs_v1';
 
 interface StoredPreferences {
   graphicsQuality: GraphicsQuality;
@@ -38,9 +39,21 @@ interface StoredPreferences {
 
 function loadSavedPreferences(): Partial<StoredPreferences> {
   try {
-    const raw = localStorage.getItem(PREFS_STORAGE_KEY);
-    if (!raw) return {};
-    return JSON.parse(raw) as Partial<StoredPreferences>;
+    const rawV2 = localStorage.getItem(PREFS_STORAGE_KEY);
+    if (rawV2) {
+      return JSON.parse(rawV2) as Partial<StoredPreferences>;
+    }
+    const rawLegacy = localStorage.getItem(LEGACY_PREFS_STORAGE_KEY);
+    if (rawLegacy) {
+      const legacy = JSON.parse(rawLegacy) as Partial<StoredPreferences>;
+      // Re-detect optimal graphicsQuality once so mobile devices upgrade from old forced 'low'
+      return {
+        audioSettings: legacy.audioSettings,
+        fourDxSettings: legacy.fourDxSettings,
+        screenReflectionBrightness: legacy.screenReflectionBrightness,
+      };
+    }
+    return {};
   } catch {
     return {};
   }

@@ -637,7 +637,7 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
           float microGain = 1.0;
           if (uIsVideo > 0.5) {
             float perf = sin(vUv.x * 960.0) * sin(vUv.y * 540.0);
-            microGain = 1.0 + perf * 0.006;
+            microGain = 1.0 + perf * 0.0025;
           }
 
           vec3 finalCol = linearRgb * uBrightness * projectorFalloff * microGain;
@@ -719,6 +719,11 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
 
     // Continuous smooth VideoTexture upload (prevents fullscreen / rVFC frame stalls)
     if (isVideo && activeVideo && activeVideo.readyState >= 2) {
+      const targetAniso = Math.min(8, gl.capabilities.getMaxAnisotropy());
+      if (activeTex.anisotropy !== targetAniso) {
+        activeTex.anisotropy = targetAniso;
+        activeTex.needsUpdate = true;
+      }
       const nowMs = performance.now();
       const timeChanged = activeVideo.currentTime !== lastVideoTimeRef.current;
       const texChanged = activeTex !== lastActiveTexRef.current;

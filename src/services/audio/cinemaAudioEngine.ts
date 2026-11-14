@@ -42,6 +42,14 @@ class CinemaAudioEngine {
   private lfeGain: GainNode | null = null;
 
   private videoSources = new Map<HTMLVideoElement, MediaElementAudioSourceNode>();
+  private pendingVideos = new Set<HTMLVideoElement>();
+  private stateListeners = new Set<(running: boolean) => void>();
+  private lastMixState: {
+    settings: AudioSettings;
+    showState: 'AUDITORIUM_OPEN' | 'SHOW_STARTING' | 'SHOW_PLAYING' | 'SHOW_COMPLETED';
+    windActive: boolean;
+    windIntensity: number;
+  } | null = null;
 
   private ambienceSource: AudioBufferSourceNode | null = null;
   private windSource: AudioBufferSourceNode | null = null;
@@ -52,6 +60,7 @@ class CinemaAudioEngine {
   private currentConfig: TheaterConfiguration | null = null;
   private lastSpatialEnabled = true;
   private isInitialized = false;
+  private iosSilenceUnlocked = false;
 
   public async initialize(
     audioProfile: AudioProfile,
@@ -66,6 +75,12 @@ class CinemaAudioEngine {
 
     if (!this.ctx) {
       this.ctx = new AudioCtx();
+      this.ctx.onstatechange = () => {
+        if (this.ctx?.state === 'running') {
+          this.flushPendingVideos();
+        }
+        this.notifyStateChange();
+      };
       this.buildAudioGraph();
       this.startProceduralAmbience();
       this.startProceduralWind();
@@ -80,10 +95,74 @@ class CinemaAudioEngine {
       }
     }
 
+    if (this.ctx.state === 'running') {
+      this.flushPendingVideos();
+    }
+
     if (theaterConfig) {
       this.configureAuditoriumSpeakers(theaterConfig);
     }
     this.applyProfile(audioProfile, seatOffsetRatio);
+    this.notifyStateChange();
+  }
+
+  /**
+   * Synchronously unlocks mobile iOS/Android Web Audio inside a user gesture handler
+   * and connects any pending video elements once the AudioContext is running.
+   */
+  public unlockFromGesture(): void {
+    if (typeof window === 'undefined') return;
+    const AudioCtx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    if (!AudioCtx) return;
+
+    if (!this.ctx) {
+      this.ctx = new AudioCtx();
+      this.ctx.onstatechange = () => {
+        if (this.ctx?.state === 'running') {
+          this.flushPendingVideos();
+        }
+        this.notifyStateChange();
+      };
+      this.buildAudioGraph();
+      this.startProceduralAmbience();
+      this.startProceduralWind();
+      this.isInitialized = true;
+    }
+
+    const ctx = this.ctx;
+    if (ctx.state === 'suspended') {
+      try {
+        void ctx.resume().then(() => {
+          if (this.ctx?.state === 'running') {
+            this.flushPendingVideos();
+          }
+          this.notifyStateChange();
+        });
+      } catch {
+        // Ignore
+      }
+    }
+
+    // Play a 1-sample silent buffer to unlock iOS Safari WebKit audio session
+    if (!this.iosSilenceUnlocked) {
+      try {
+        const buffer = ctx.createBuffer(1, 1, 22050);
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(ctx.destination);
+        source.start(0);
+        this.iosSilenceUnlocked = true;
+      } catch {
+        // Ignore
+      }
+    }
+
+    if (ctx.state === 'running') {
+      this.flushPendingVideos();
+    }
+    this.notifyStateChange();
   }
 
   private buildAudioGraph(): void {
@@ -141,7 +220,11 @@ class CinemaAudioEngine {
       rolloff = 0.55,
     ): PannerNode => {
       const p = ctx.createPanner();
-      p.panningModel = 'HRTF';
+      try {
+        p.panningModel = 'HRTF';
+      } catch {
+        p.panningModel = 'equalpower';
+      }
       p.distanceModel = 'inverse';
       p.refDistance = refDist;
       p.maxDistance = 120;
@@ -505,12 +588,18 @@ class CinemaAudioEngine {
   }
 
   public async resume(): Promise<void> {
-    if (!this.ctx || this.ctx.state !== 'suspended') return;
-    try {
-      await this.ctx.resume();
-    } catch {
-      // Ignore resume error if blocked by autoplay policy
+    if (!this.ctx) return;
+    if (this.ctx.state === 'suspended') {
+      try {
+        await this.ctx.resume();
+      } catch {
+        // Ignore resume error if blocked by autoplay policy
+      }
     }
+    if (this.ctx.state === 'running') {
+      this.flushPendingVideos();
+    }
+    this.notifyStateChange();
   }
 
   public applyProfile(profile: AudioProfile, _seatOffsetRatio: number): void {
@@ -537,15 +626,39 @@ class CinemaAudioEngine {
   }
 
   public attachVideoElement(videoEl: HTMLVideoElement): void {
+    this.pendingVideos.add(videoEl);
     if (!this.ctx || !this.lowShelf) return;
     if (this.videoSources.has(videoEl)) return;
+    // Do NOT hijack <video> into a suspended AudioContext (mobile browsers would output 0 audio).
+    // flushPendingVideos() connects the element as soon as AudioContext transitions to 'running'.
+    if (this.ctx.state !== 'running') return;
 
     try {
       const src = this.ctx.createMediaElementSource(videoEl);
       src.connect(this.lowShelf);
+      videoEl.volume = 1;
       this.videoSources.set(videoEl, src);
     } catch {
       // Fallback: if browser blocks or element already bound, video plays directly
+    }
+  }
+
+  private flushPendingVideos(): void {
+    if (!this.ctx || !this.lowShelf || this.ctx.state !== 'running') return;
+    this.pendingVideos.forEach((videoEl) => {
+      if (this.videoSources.has(videoEl)) return;
+      try {
+        const src = this.ctx!.createMediaElementSource(videoEl);
+        src.connect(this.lowShelf!);
+        videoEl.volume = 1;
+        this.videoSources.set(videoEl, src);
+      } catch {
+        // Ignore if element cannot be attached
+      }
+    });
+    if (this.lastMixState) {
+      const { settings, showState, windActive, windIntensity } = this.lastMixState;
+      this.updateMix(settings, showState, windActive, windIntensity);
     }
   }
 
@@ -555,6 +668,7 @@ class CinemaAudioEngine {
     windActive = false,
     windIntensity = 0,
   ): void {
+    this.lastMixState = { settings, showState, windActive, windIntensity };
     if (
       !this.ctx ||
       !this.masterGain ||
@@ -578,7 +692,7 @@ class CinemaAudioEngine {
 
     // Prioritize uploaded video audio during show
     const targetVideoGain = showState === 'SHOW_PLAYING' ? settings.videoVolume : 0.02;
-    this.videoGain.gain.setTargetAtTime(targetVideoGain, now, 0.35);
+    this.videoGain.gain.setTargetAtTime(targetVideoGain, now, 0.25);
 
     // Subtle auditorium ambience before & after show, very quiet during show
     const ambienceMultiplier = showState === 'SHOW_PLAYING' ? 0.08 : 0.22;
@@ -600,7 +714,11 @@ class CinemaAudioEngine {
     if (!this.ctx || !this.videoGain) return;
     const now = this.ctx.currentTime;
     this.videoGain.gain.cancelScheduledValues(now);
-    this.videoGain.gain.setValueAtTime(0.001, now);
+    if (this.ctx.state !== 'running') {
+      this.videoGain.gain.setValueAtTime(targetVolume, now);
+      return;
+    }
+    this.videoGain.gain.setValueAtTime(Math.max(0.04, Math.min(targetVolume, 0.08)), now);
     this.videoGain.gain.linearRampToValueAtTime(targetVolume, now + durationSec);
   }
 
@@ -717,9 +835,11 @@ class CinemaAudioEngine {
       }
     });
     this.videoSources.clear();
+    this.pendingVideos.clear();
     this.panners.clear();
     this.surroundWidthGains = [];
     if (this.ctx) {
+      this.ctx.onstatechange = null;
       this.ctx.close().catch(() => {});
     }
     this.ctx = null;
@@ -741,11 +861,35 @@ class CinemaAudioEngine {
     this.windSource = null;
     this.currentProfile = null;
     this.currentConfig = null;
+    this.lastMixState = null;
     this.isInitialized = false;
+    this.iosSilenceUnlocked = false;
+    this.notifyStateChange();
+  }
+
+  private notifyStateChange(): void {
+    const running = this.isRunning;
+    this.stateListeners.forEach((cb) => cb(running));
+  }
+
+  public onStateChange(cb: (running: boolean) => void): () => void {
+    this.stateListeners.add(cb);
+    cb(this.isRunning);
+    return () => {
+      this.stateListeners.delete(cb);
+    };
+  }
+
+  public isVideoAttached(videoEl: HTMLVideoElement | null): boolean {
+    return Boolean(videoEl && this.videoSources.has(videoEl));
   }
 
   public get initialized(): boolean {
     return this.isInitialized;
+  }
+
+  public get isRunning(): boolean {
+    return Boolean(this.ctx && this.ctx.state === 'running');
   }
 
   public get spatialActive(): boolean {

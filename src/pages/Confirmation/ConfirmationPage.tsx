@@ -3,6 +3,7 @@ import { ArrowLeft, Armchair, CheckCircle2, Film, Play } from 'lucide-react';
 import { useCinemaStore } from '../../store/cinemaStore';
 import { StepProgressBar } from '../../components/common/StepProgressBar';
 import { formatDuration, formatFileSize } from '../../utils/formatters';
+import { cinemaAudioEngine } from '../../services/audio/cinemaAudioEngine';
 
 export const ConfirmationPage: React.FC = () => {
   const {
@@ -47,6 +48,14 @@ export const ConfirmationPage: React.FC = () => {
   const totalBytes = playlist.reduce((sum, item) => sum + item.fileSize, 0);
 
   const handleConfirmAndEnter = () => {
+    const seatOffsetRatio =
+      selectedSeat.worldPosition[0] /
+      Math.max(1, selectedTheaterConfig.auditoriumWidth / 2);
+    cinemaAudioEngine.unlockFromGesture();
+    cinemaAudioEngine
+      .initialize(selectedTheaterConfig.audioProfile, seatOffsetRatio, selectedTheaterConfig)
+      .catch(() => {});
+
     setShowState('AUDITORIUM_OPEN');
     setCurrentPlaybackIndex(0);
     setShowCompleted(false);
@@ -92,33 +101,35 @@ export const ConfirmationPage: React.FC = () => {
                   </h2>
                 </div>
 
-                <div className="border-t border-white/[0.06] pt-4 space-y-2.5 text-sm">
-                  <div className="flex items-center justify-between">
-                    <span className="text-neutral-400">Reserved Seat</span>
-                    <span className="inline-flex items-center gap-1.5 font-mono-tabular font-semibold text-[#E5C158]">
-                      <Armchair className="h-4 w-4" />
-                      {selectedSeat.id} (Row {selectedSeat.rowLabel} · Seat{' '}
-                      {selectedSeat.seatNumber})
+                <div className="border-t border-white/[0.06] pt-4 space-y-2.5 text-xs sm:text-sm">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-neutral-400 shrink-0">Reserved Seat</span>
+                    <span className="inline-flex items-center gap-1.5 font-mono-tabular font-semibold text-[#E5C158] text-right">
+                      <Armchair className="h-4 w-4 shrink-0" />
+                      <span>
+                        {selectedSeat.id} (Row {selectedSeat.rowLabel} · Seat{' '}
+                        {selectedSeat.seatNumber})
+                      </span>
                     </span>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-neutral-400">3D Viewpoint</span>
-                    <span className="font-mono-tabular text-xs text-neutral-300">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-neutral-400 shrink-0">3D Viewpoint</span>
+                    <span className="font-mono-tabular text-xs text-neutral-300 text-right">
                       ({selectedSeat.eyePosition[0]}m, {selectedSeat.eyePosition[1]}m,{' '}
                       {selectedSeat.eyePosition[2]}m)
                     </span>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-neutral-400">Playlist Mode</span>
-                    <span className="text-[#F4F1EA] font-medium">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-neutral-400 shrink-0">Playlist Mode</span>
+                    <span className="text-[#F4F1EA] font-medium text-right">
                       {videoMode === 'without_ads'
                         ? 'Option A · Without Ads'
                         : 'Option B · With Ads'}
                     </span>
                   </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-neutral-400">Screen Dimensions</span>
-                    <span className="font-mono-tabular text-neutral-200">
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-neutral-400 shrink-0">Screen Dimensions</span>
+                    <span className="font-mono-tabular text-neutral-200 text-right">
                       {selectedTheaterConfig.screenWidth}m × {selectedTheaterConfig.screenHeight}m
                     </span>
                   </div>

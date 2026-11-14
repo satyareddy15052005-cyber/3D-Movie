@@ -5,6 +5,7 @@ import { OrbitControls } from '@react-three/drei';
 import gsap from 'gsap';
 import { CameraViewMode, SeatData, TheaterConfiguration } from '../../types/cinema';
 import { cinemaAudioEngine } from '../../services/audio/cinemaAudioEngine';
+import { computeAdaptiveCinemaFov } from '../../utils/formatters';
 
 const _listenerFwd = new THREE.Vector3();
 const _listenerUp = new THREE.Vector3();
@@ -93,7 +94,7 @@ export const FirstPersonCameraRig: React.FC<FirstPersonCameraRigProps> = ({
     baseAnglesRef.current = { yaw: euler.y, pitch: euler.x };
 
     const fullDummy = new THREE.PerspectiveCamera();
-    const fov = config.categoryId === 'imax' ? 62 : 54;
+    const fov = computeAdaptiveCinemaFov(config.categoryId, size.width, size.height);
     const fovRad = THREE.MathUtils.degToRad(fov);
     const viewportAspect = size.width / Math.max(1, size.height);
     const halfH = config.screenHeight / 2;
@@ -112,10 +113,20 @@ export const FirstPersonCameraRig: React.FC<FirstPersonCameraRigProps> = ({
     screenFullQuatRef.current.copy(fullDummy.quaternion);
   }, [seat, config, size.width, size.height]);
 
+  // Dynamically adapt FOV on viewport resize / mobile portrait-landscape orientation changes
+  useEffect(() => {
+    const persp = camera as THREE.PerspectiveCamera;
+    const nextFov = computeAdaptiveCinemaFov(config.categoryId, size.width, size.height);
+    if (Math.abs(persp.fov - nextFov) > 0.05) {
+      persp.fov = nextFov;
+      persp.updateProjectionMatrix();
+    }
+  }, [camera, config.categoryId, size.width, size.height]);
+
   // First-person entrance walk-in animation via GSAP (runs once on initial entry)
   useEffect(() => {
     const persp = camera as THREE.PerspectiveCamera;
-    persp.fov = config.categoryId === 'imax' ? 62 : 54;
+    persp.fov = computeAdaptiveCinemaFov(config.categoryId, size.width, size.height);
     persp.updateProjectionMatrix();
 
     if (entranceComplete || entranceStartedRef.current) {
@@ -243,7 +254,7 @@ export const FirstPersonCameraRig: React.FC<FirstPersonCameraRigProps> = ({
       dummy.lookAt(0, Math.min(config.screenPosition[1] * 0.5, config.auditoriumHeight * 0.45), -config.auditoriumLength * 0.06);
       targetQuat.copy(dummy.quaternion);
     } else if (viewMode === 'screen_full') {
-      const fov = config.categoryId === 'imax' ? 62 : 54;
+      const fov = computeAdaptiveCinemaFov(config.categoryId, size.width, size.height);
       const fovRad = THREE.MathUtils.degToRad(fov);
       const viewportAspect = size.width / Math.max(1, size.height);
       const halfH = config.screenHeight / 2;
@@ -335,10 +346,11 @@ export const FirstPersonCameraRig: React.FC<FirstPersonCameraRigProps> = ({
       const dy = e.clientY - lastPointerRef.current.y;
       lastPointerRef.current = { x: e.clientX, y: e.clientY };
 
+      const sensitivityScale = e.pointerType === 'touch' ? 1.4 : 1.0;
       // Unrestricted 360-degree horizontal rotation so viewer can inspect sides, ceiling & rear projector booth
-      lookOffsetRef.current.targetYaw += dx * 0.0044;
+      lookOffsetRef.current.targetYaw += dx * 0.0044 * sensitivityScale;
       lookOffsetRef.current.targetPitch = THREE.MathUtils.clamp(
-        lookOffsetRef.current.targetPitch + dy * 0.0032,
+        lookOffsetRef.current.targetPitch + dy * 0.0032 * sensitivityScale,
         -1.22,
         1.22,
       );
@@ -409,7 +421,7 @@ export const FirstPersonCameraRig: React.FC<FirstPersonCameraRigProps> = ({
     }
 
     if (viewMode === 'screen_full') {
-      const fov = config.categoryId === 'imax' ? 62 : 54;
+      const fov = computeAdaptiveCinemaFov(config.categoryId, size.width, size.height);
       const fovRad = THREE.MathUtils.degToRad(fov);
       const viewportAspect = size.width / Math.max(1, size.height);
       const halfH = config.screenHeight / 2;

@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import * as THREE from 'three';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
@@ -8,14 +8,23 @@ import { AuditoriumShell } from '../models/AuditoriumShell';
 import { SeatModels } from '../models/SeatModels';
 import { CinemaScreen } from '../models/CinemaScreen';
 import { CinemaLightingRig } from '../lighting/CinemaLightingRig';
-import { detectWebGLSupport } from '../../utils/formatters';
+import { computeAdaptiveCinemaFov, detectWebGLSupport } from '../../utils/formatters';
 
 interface TheaterPreviewCanvasProps {
   config: TheaterConfiguration;
 }
 
 const PreviewOrbitRig: React.FC<{ config: TheaterConfiguration }> = ({ config }) => {
-  const { camera } = useThree();
+  const { camera, size } = useThree();
+
+  useEffect(() => {
+    const persp = camera as THREE.PerspectiveCamera;
+    const nextFov = computeAdaptiveCinemaFov(config.categoryId, size.width, size.height);
+    if (Math.abs(persp.fov - nextFov) > 0.05) {
+      persp.fov = nextFov;
+      persp.updateProjectionMatrix();
+    }
+  }, [camera, config.categoryId, size.width, size.height]);
 
   const clampCamera = () => {
     const maxHalfX = Math.max(1.2, config.auditoriumWidth / 2 - 0.72);
@@ -86,7 +95,7 @@ export const TheaterPreviewCanvas: React.FC<TheaterPreviewCanvasProps> = ({ conf
 
   return (
     <Canvas
-      dpr={webglInfo.isSoftwareGl ? 0.75 : [1, 1.5]}
+      dpr={webglInfo.isSoftwareGl ? 0.75 : [1, 1.75]}
       gl={{
         antialias: !webglInfo.isSoftwareGl,
         toneMapping: THREE.ACESFilmicToneMapping,
@@ -94,7 +103,11 @@ export const TheaterPreviewCanvas: React.FC<TheaterPreviewCanvasProps> = ({ conf
       }}
       camera={{
         position: [config.auditoriumWidth * 0.22, rearY, rearZ],
-        fov: 52,
+        fov: computeAdaptiveCinemaFov(
+          config.categoryId,
+          typeof window !== 'undefined' ? window.innerWidth : 900,
+          typeof window !== 'undefined' ? window.innerHeight : 600,
+        ),
         near: 0.1,
         far: 120,
       }}
