@@ -51,6 +51,14 @@ export function isMobileDevice(): boolean {
   return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || window.innerWidth < 768;
 }
 
+export function isIosDevice(): boolean {
+  if (typeof window === 'undefined') return false;
+  return (
+    /iPad|iPhone|iPod/i.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)
+  );
+}
+
 /**
  * Adapts vertical camera FOV on narrow/portrait mobile screens so horizontal theater width
  * (screen edges, side speakers, walls, and neighboring rows) stays properly scaled instead of zooming in.

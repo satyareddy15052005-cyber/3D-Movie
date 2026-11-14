@@ -74,9 +74,9 @@ const DEFAULT_AUDIO: AudioSettings = {
   videoVolume: 1.0,
   ambienceVolume: 0.45,
   effectsVolume: 0.55,
-  muted: false,
   spatialSimulation: true,
   ...savedPrefs.audioSettings,
+  muted: false,
 };
 
 const DEFAULT_FOUR_DX: FourDxSettings = {

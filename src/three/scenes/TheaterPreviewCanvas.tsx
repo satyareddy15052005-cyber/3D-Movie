@@ -8,14 +8,21 @@ import { AuditoriumShell } from '../models/AuditoriumShell';
 import { SeatModels } from '../models/SeatModels';
 import { CinemaScreen } from '../models/CinemaScreen';
 import { CinemaLightingRig } from '../lighting/CinemaLightingRig';
-import { computeAdaptiveCinemaFov, detectWebGLSupport } from '../../utils/formatters';
+import { computeAdaptiveCinemaFov, detectWebGLSupport, isMobileDevice } from '../../utils/formatters';
 
 interface TheaterPreviewCanvasProps {
   config: TheaterConfiguration;
 }
 
-const PreviewOrbitRig: React.FC<{ config: TheaterConfiguration }> = ({ config }) => {
-  const { camera, size } = useThree();
+const PreviewOrbitRig: React.FC<{ config: TheaterConfiguration; isSoftwareGl: boolean }> = ({
+  config,
+  isSoftwareGl,
+}) => {
+  const { camera, size, gl } = useThree();
+
+  useEffect(() => {
+    gl.domElement.style.touchAction = 'none';
+  }, [gl]);
 
   useEffect(() => {
     const persp = camera as THREE.PerspectiveCamera;
@@ -64,7 +71,9 @@ const PreviewOrbitRig: React.FC<{ config: TheaterConfiguration }> = ({ config })
         -config.auditoriumLength * 0.06,
       ]}
       enablePan={false}
-      enableDamping={false}
+      enableDamping={!isSoftwareGl}
+      dampingFactor={0.075}
+      rotateSpeed={isMobileDevice() ? 0.85 : 0.72}
       minDistance={2.8}
       maxDistance={maxDist}
       maxPolarAngle={Math.PI * 0.58}
@@ -139,7 +148,7 @@ export const TheaterPreviewCanvas: React.FC<TheaterPreviewCanvasProps> = ({ conf
         showState="AUDITORIUM_OPEN"
         screenBrightnessRef={screenBrightnessRef}
       />
-      <PreviewOrbitRig config={config} />
+      <PreviewOrbitRig config={config} isSoftwareGl={webglInfo.isSoftwareGl} />
     </Canvas>
   );
 };

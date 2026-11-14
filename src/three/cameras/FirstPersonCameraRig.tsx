@@ -5,7 +5,7 @@ import { OrbitControls } from '@react-three/drei';
 import gsap from 'gsap';
 import { CameraViewMode, SeatData, TheaterConfiguration } from '../../types/cinema';
 import { cinemaAudioEngine } from '../../services/audio/cinemaAudioEngine';
-import { computeAdaptiveCinemaFov } from '../../utils/formatters';
+import { computeAdaptiveCinemaFov, isMobileDevice } from '../../utils/formatters';
 
 const _listenerFwd = new THREE.Vector3();
 const _listenerUp = new THREE.Vector3();
@@ -19,6 +19,7 @@ interface FirstPersonCameraRigProps {
   resetViewSignal: number;
   skipWalkSignal: number;
   isPlaying: boolean;
+  isSoftwareGl?: boolean;
   fourDxCameraIntensity: number; // 0..1
 }
 
@@ -56,6 +57,7 @@ export const FirstPersonCameraRig: React.FC<FirstPersonCameraRigProps> = ({
   resetViewSignal,
   skipWalkSignal,
   isPlaying,
+  isSoftwareGl = false,
   fourDxCameraIntensity,
 }) => {
   const { camera, gl, size } = useThree();
@@ -63,10 +65,18 @@ export const FirstPersonCameraRig: React.FC<FirstPersonCameraRigProps> = ({
   const glideTweenRef = useRef<gsap.core.Tween | null>(null);
   const isGlidingRef = useRef(false);
 
-  // Unlimited 360-degree yaw + comfortable pitch offset while seated
-  const lookOffsetRef = useRef({ yaw: 0, pitch: 0, targetYaw: 0, targetPitch: 0 });
+  // Unlimited 360-degree yaw + comfortable pitch offset while seated, with smooth inertia momentum
+  const lookOffsetRef = useRef({
+    yaw: 0,
+    pitch: 0,
+    targetYaw: 0,
+    targetPitch: 0,
+    yawVel: 0,
+    pitchVel: 0,
+  });
   const isDraggingRef = useRef(false);
-  const lastPointerRef = useRef({ x: 0, y: 0 });
+  const activePointerIdRef = useRef<number | null>(null);
+  const lastPointerRef = useRef({ x: 0, y: 0, timeMs: 0 });
 
   const baseQuatRef = useRef(new THREE.Quaternion());
   const baseAnglesRef = useRef({ yaw: 0, pitch: 0 });
@@ -235,6 +245,8 @@ export const FirstPersonCameraRig: React.FC<FirstPersonCameraRigProps> = ({
     lookOffsetRef.current.targetPitch = 0;
     lookOffsetRef.current.yaw = 0;
     lookOffsetRef.current.pitch = 0;
+    lookOffsetRef.current.yawVel = 0;
+    lookOffsetRef.current.pitchVel = 0;
 
     let targetPos: [number, number, number];
     const targetQuat = new THREE.Quaternion();
@@ -327,46 +339,91 @@ export const FirstPersonCameraRig: React.FC<FirstPersonCameraRigProps> = ({
         Math.round(lookOffsetRef.current.yaw / (Math.PI * 2)) * (Math.PI * 2);
       lookOffsetRef.current.targetYaw = nearestTurn;
       lookOffsetRef.current.targetPitch = 0;
+      lookOffsetRef.current.yawVel = 0;
+      lookOffsetRef.current.pitchVel = 0;
     }
   }, [resetViewSignal]);
 
-  // Full 360-degree horizontal drag look + wide vertical pitch while seated
+  // Full 360-degree horizontal drag look + smooth touch momentum inertia while seated
   useEffect(() => {
     const dom = gl.domElement;
+    dom.style.touchAction = 'none';
 
     const onPointerDown = (e: PointerEvent) => {
       if (!entranceComplete || viewMode !== 'seat') return;
+      if (activePointerIdRef.current !== null && activePointerIdRef.current !== e.pointerId) {
+        return;
+      }
+      activePointerIdRef.current = e.pointerId;
       isDraggingRef.current = true;
-      lastPointerRef.current = { x: e.clientX, y: e.clientY };
+      lastPointerRef.current = { x: e.clientX, y: e.clientY, timeMs: performance.now() };
+      lookOffsetRef.current.yawVel = 0;
+      lookOffsetRef.current.pitchVel = 0;
     };
 
     const onPointerMove = (e: PointerEvent) => {
       if (!isDraggingRef.current || !entranceComplete || viewMode !== 'seat') return;
-      const dx = e.clientX - lastPointerRef.current.x;
-      const dy = e.clientY - lastPointerRef.current.y;
-      lastPointerRef.current = { x: e.clientX, y: e.clientY };
+      if (activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) {
+        return;
+      }
 
-      const sensitivityScale = e.pointerType === 'touch' ? 1.4 : 1.0;
-      // Unrestricted 360-degree horizontal rotation so viewer can inspect sides, ceiling & rear projector booth
-      lookOffsetRef.current.targetYaw += dx * 0.0044 * sensitivityScale;
-      lookOffsetRef.current.targetPitch = THREE.MathUtils.clamp(
-        lookOffsetRef.current.targetPitch + dy * 0.0032 * sensitivityScale,
-        -1.22,
-        1.22,
-      );
+      const nowMs = performance.now();
+      const elapsedSec = Math.max(0.008, Math.min(0.05, (nowMs - lastPointerRef.current.timeMs) / 1000));
+      const rawDx = e.clientX - lastPointerRef.current.x;
+      const rawDy = e.clientY - lastPointerRef.current.y;
+      lastPointerRef.current = { x: e.clientX, y: e.clientY, timeMs: nowMs };
+
+      // Clamp abrupt OS touch-handoff spikes so mobile rotation stays silky smooth
+      const dx = THREE.MathUtils.clamp(rawDx, -90, 90);
+      const dy = THREE.MathUtils.clamp(rawDy, -90, 90);
+
+      const isTouch = e.pointerType === 'touch';
+      const yawStep = dx * (isTouch ? 0.0052 : 0.0044);
+      const pitchStep = dy * (isTouch ? 0.0038 : 0.0032);
+
+      const look = lookOffsetRef.current;
+      look.targetYaw += yawStep;
+      look.targetPitch = THREE.MathUtils.clamp(look.targetPitch + pitchStep, -1.22, 1.22);
+
+      if (isTouch) {
+        const instYawVel = THREE.MathUtils.clamp(yawStep / elapsedSec, -6.5, 6.5);
+        const instPitchVel = THREE.MathUtils.clamp(pitchStep / elapsedSec, -3.5, 3.5);
+        look.yawVel = THREE.MathUtils.lerp(look.yawVel, instYawVel, 0.45);
+        look.pitchVel = THREE.MathUtils.lerp(look.pitchVel, instPitchVel, 0.45);
+      }
     };
 
-    const onPointerUp = () => {
+    const onPointerUp = (e: PointerEvent) => {
+      if (activePointerIdRef.current !== null && e.pointerId !== activePointerIdRef.current) {
+        return;
+      }
       isDraggingRef.current = false;
+      activePointerIdRef.current = null;
+      // Only carry forward touch inertia if the last move was recent (< 70ms)
+      if (performance.now() - lastPointerRef.current.timeMs > 70) {
+        lookOffsetRef.current.yawVel = 0;
+        lookOffsetRef.current.pitchVel = 0;
+      }
+    };
+
+    const onBlur = () => {
+      isDraggingRef.current = false;
+      activePointerIdRef.current = null;
+      lookOffsetRef.current.yawVel = 0;
+      lookOffsetRef.current.pitchVel = 0;
     };
 
     dom.addEventListener('pointerdown', onPointerDown);
-    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointermove', onPointerMove, { passive: true });
     window.addEventListener('pointerup', onPointerUp);
+    window.addEventListener('pointercancel', onPointerUp);
+    window.addEventListener('blur', onBlur);
     return () => {
       dom.removeEventListener('pointerdown', onPointerDown);
       window.removeEventListener('pointermove', onPointerMove);
       window.removeEventListener('pointerup', onPointerUp);
+      window.removeEventListener('pointercancel', onPointerUp);
+      window.removeEventListener('blur', onBlur);
     };
   }, [gl, entranceComplete, viewMode]);
 
@@ -403,8 +460,20 @@ export const FirstPersonCameraRig: React.FC<FirstPersonCameraRigProps> = ({
     const dt = Math.min(delta, 0.05);
 
     const look = lookOffsetRef.current;
-    look.yaw = THREE.MathUtils.damp(look.yaw, look.targetYaw, 9, dt);
-    look.pitch = THREE.MathUtils.damp(look.pitch, look.targetPitch, 9, dt);
+    if (!isDraggingRef.current && (Math.abs(look.yawVel) > 0.002 || Math.abs(look.pitchVel) > 0.002)) {
+      look.targetYaw += look.yawVel * dt;
+      look.targetPitch = THREE.MathUtils.clamp(look.targetPitch + look.pitchVel * dt, -1.22, 1.22);
+      const decay = Math.exp(-5.4 * dt);
+      look.yawVel *= decay;
+      look.pitchVel *= decay;
+    } else if (!isDraggingRef.current) {
+      look.yawVel = 0;
+      look.pitchVel = 0;
+    }
+
+    const followLambda = isDraggingRef.current ? 18 : 12;
+    look.yaw = THREE.MathUtils.damp(look.yaw, look.targetYaw, followLambda, dt);
+    look.pitch = THREE.MathUtils.damp(look.pitch, look.targetPitch, followLambda, dt);
 
     // Synchronized theme-park 4DX camera heave, pitch & roll matching SeatModels physics
     let motionX = 0;
@@ -472,6 +541,7 @@ export const FirstPersonCameraRig: React.FC<FirstPersonCameraRigProps> = ({
       3.5,
       Math.min(config.auditoriumWidth * 0.45, config.auditoriumLength * 0.48),
     );
+    const mobile = isMobileDevice();
     return (
       <OrbitControls
         target={[
@@ -480,7 +550,9 @@ export const FirstPersonCameraRig: React.FC<FirstPersonCameraRigProps> = ({
           -config.auditoriumLength * 0.06,
         ]}
         enablePan={false}
-        enableDamping={false}
+        enableDamping={!isSoftwareGl}
+        dampingFactor={0.075}
+        rotateSpeed={mobile ? 0.85 : 0.72}
         minDistance={2.8}
         maxDistance={hallMaxDistance}
         minAzimuthAngle={-Infinity}

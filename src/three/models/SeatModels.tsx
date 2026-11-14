@@ -600,6 +600,7 @@ export const SeatModels: React.FC<SeatModelsProps> = ({
 
   const handleSeatPointerMove = (e: ThreeEvent<PointerEvent>) => {
     if (!interactive || e.instanceId === undefined) return;
+    if (e.nativeEvent.pointerType === 'touch') return;
     e.stopPropagation();
     const seat = seats[e.instanceId];
     if (!seat || seat.status === 'unavailable') {

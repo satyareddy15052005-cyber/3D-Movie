@@ -22,7 +22,7 @@ import {
 import { useCinemaStore } from '../../store/cinemaStore';
 import { CinemaAuditoriumCanvas } from '../../three/scenes/CinemaAuditoriumCanvas';
 import { cinemaAudioEngine } from '../../services/audio/cinemaAudioEngine';
-import { formatDuration } from '../../utils/formatters';
+import { formatDuration, isMobileDevice } from '../../utils/formatters';
 import { CameraViewMode } from '../../types/cinema';
 
 export const VirtualCinemaPage: React.FC = () => {
@@ -68,6 +68,10 @@ export const VirtualCinemaPage: React.FC = () => {
   activeDeckRef.current = activeDeck;
   const isPausedRef = useRef(isPaused);
   isPausedRef.current = isPaused;
+  const showStateRef = useRef(showState);
+  showStateRef.current = showState;
+  const audioSettingsRef = useRef(audioSettings);
+  audioSettingsRef.current = audioSettings;
   const videoVolumeRef = useRef(audioSettings.videoVolume);
   videoVolumeRef.current = audioSettings.videoVolume;
   const selectedSeatRef = useRef(selectedSeat);
@@ -110,21 +114,114 @@ export const VirtualCinemaPage: React.FC = () => {
     return activeDeckRef.current === 'A' ? deckARef.current : deckBRef.current;
   }, []);
 
+  const silenceStreakRef = useRef(0);
+
+  const createDeckElement = useCallback((host: HTMLElement) => {
+    const vid = document.createElement('video');
+    vid.playsInline = true;
+    vid.setAttribute('playsinline', '');
+    vid.setAttribute('webkit-playsinline', '');
+    vid.preload = 'auto';
+    vid.muted = audioSettingsRef.current.muted;
+    vid.volume = audioSettingsRef.current.muted
+      ? 0
+      : audioSettingsRef.current.masterVolume * audioSettingsRef.current.videoVolume;
+    vid.disableRemotePlayback = true;
+    vid.style.width = '32px';
+    vid.style.height = '18px';
+    vid.style.position = 'absolute';
+    vid.style.top = '0';
+    vid.style.left = '0';
+    vid.style.pointerEvents = 'none';
+    host.appendChild(vid);
+    return vid;
+  }, []);
+
+  const replaceActiveDeckWithNative = useCallback(() => {
+    const host = videoHostRef.current || containerRef.current || document.body;
+    const deckKey = activeDeckRef.current;
+    const oldVid = deckKey === 'A' ? deckARef.current : deckBRef.current;
+    if (!oldVid) return;
+
+    cinemaAudioEngine.disableVideoHijack();
+    silenceStreakRef.current = 0;
+
+    const resumeTime = Number.isFinite(oldVid.currentTime) ? oldVid.currentTime : 0;
+    const oldSrc = oldVid.currentSrc || oldVid.src;
+    const wasPlaying = !oldVid.paused && !isPausedRef.current;
+
+    try {
+      oldVid.pause();
+      oldVid.removeAttribute('src');
+      oldVid.load();
+      oldVid.remove();
+    } catch {
+      // Ignore cleanup error
+    }
+
+    const freshVid = createDeckElement(host);
+    freshVid.muted = audioSettingsRef.current.muted;
+    freshVid.volume = audioSettingsRef.current.muted
+      ? 0
+      : audioSettingsRef.current.masterVolume * audioSettingsRef.current.videoVolume;
+
+    if (oldSrc) {
+      loadedUrlRef.current[deckKey] = oldSrc;
+      freshVid.src = oldSrc;
+      freshVid.load();
+      if (resumeTime > 0.05) {
+        const seekOnReady = () => {
+          try {
+            freshVid.currentTime = resumeTime;
+          } catch {
+            // Ignore seek before duration ready
+          }
+          freshVid.removeEventListener('loadedmetadata', seekOnReady);
+        };
+        freshVid.addEventListener('loadedmetadata', seekOnReady);
+      }
+    }
+
+    if (deckKey === 'A') {
+      deckARef.current = freshVid;
+      setDeckAEl(freshVid);
+    } else {
+      deckBRef.current = freshVid;
+      setDeckBEl(freshVid);
+    }
+
+    if (wasPlaying) {
+      freshVid.play().catch(() => {});
+    }
+  }, [createDeckElement]);
+
   // Track Web Audio running state + unlock audio cleanly on any mobile tap/touch/click gesture
   useEffect(() => {
     const unsubscribe = cinemaAudioEngine.onStateChange((running) => {
       setAudioRunning(running);
-      if (running) {
-        if (deckARef.current) cinemaAudioEngine.attachVideoElement(deckARef.current);
-        if (deckBRef.current) cinemaAudioEngine.attachVideoElement(deckBRef.current);
+      if (running && showStateRef.current === 'SHOW_PLAYING') {
+        const activeVid = activeDeckRef.current === 'A' ? deckARef.current : deckBRef.current;
+        if (activeVid && !activeVid.paused && activeVid.readyState >= 2) {
+          cinemaAudioEngine.attachVideoElement(activeVid);
+        }
       }
     });
 
     const handleGestureUnlock = () => {
       if (!cinemaAudioEngine.isRunning) {
         cinemaAudioEngine.unlockFromGesture();
-        if (deckARef.current) cinemaAudioEngine.attachVideoElement(deckARef.current);
-        if (deckBRef.current) cinemaAudioEngine.attachVideoElement(deckBRef.current);
+      }
+      const activeVid = activeDeckRef.current === 'A' ? deckARef.current : deckBRef.current;
+      if (
+        activeVid &&
+        showStateRef.current === 'SHOW_PLAYING' &&
+        !isPausedRef.current &&
+        activeVid.readyState >= 2
+      ) {
+        activeVid.muted = audioSettingsRef.current.muted;
+        if (cinemaAudioEngine.isRunning && !activeVid.paused) {
+          cinemaAudioEngine.attachVideoElement(activeVid);
+        }
       }
     };
 
@@ -143,26 +240,8 @@ export const VirtualCinemaPage: React.FC = () => {
   // Create persistent Dual-Deck HTMLVideoElements mounted INSIDE containerRef (so Fullscreen Top Layer never occludes or stalls decoding)
   useEffect(() => {
     const host = videoHostRef.current || containerRef.current || document.body;
-    const createDeck = () => {
-      const vid = document.createElement('video');
-      vid.playsInline = true;
-      vid.setAttribute('playsinline', '');
-      vid.setAttribute('webkit-playsinline', '');
-      vid.preload = 'auto';
-      vid.muted = false;
-      vid.disableRemotePlayback = true;
-      vid.style.width = '32px';
-      vid.style.height = '18px';
-      vid.style.position = 'absolute';
-      vid.style.top = '0';
-      vid.style.left = '0';
-      vid.style.pointerEvents = 'none';
-      host.appendChild(vid);
-      return vid;
-    };
-
-    const vidA = createDeck();
-    const vidB = createDeck();
+    const vidA = createDeckElement(host);
+    const vidB = createDeckElement(host);
     deckARef.current = vidA;
     deckBRef.current = vidB;
     setDeckAEl(vidA);
@@ -226,7 +305,7 @@ export const VirtualCinemaPage: React.FC = () => {
     }
   }, [playlist, currentPlaybackIndex, activeDeck]);
 
-  // Initialize Web Audio API profile once when entering theater
+  // Initialize Web Audio API profile once when entering theater (never attach/hijack <video> until playing)
   useEffect(() => {
     const seat = selectedSeatRef.current;
     if (!selectedTheaterConfig || !seat) return;
@@ -235,11 +314,9 @@ export const VirtualCinemaPage: React.FC = () => {
     cinemaAudioEngine
       .initialize(selectedTheaterConfig.audioProfile, seatOffsetRatio, selectedTheaterConfig)
       .then(() => {
-        if (deckARef.current) cinemaAudioEngine.attachVideoElement(deckARef.current);
-        if (deckBRef.current) cinemaAudioEngine.attachVideoElement(deckBRef.current);
         cinemaAudioEngine.updateMix(
-          audioSettings,
-          showState,
+          audioSettingsRef.current,
+          showStateRef.current,
           Boolean(selectedTheaterConfig.supports4dxEffects) &&
             fourDxSettings.enabled &&
             fourDxSettings.windAudioEnabled,
@@ -275,10 +352,36 @@ export const VirtualCinemaPage: React.FC = () => {
     );
   }, [audioSettings, showState, selectedTheaterConfig, fourDxSettings, audioRunning]);
 
+  const primeVideoForGesture = useCallback((vid: HTMLVideoElement | null) => {
+    if (!vid || (!vid.src && !vid.currentSrc)) return;
+    vid.muted = audioSettingsRef.current.muted;
+    if (!cinemaAudioEngine.isVideoAttached(vid)) {
+      vid.volume = audioSettingsRef.current.muted
+        ? 0
+        : audioSettingsRef.current.masterVolume * audioSettingsRef.current.videoVolume;
+    }
+    try {
+      const playAttempt = vid.play();
+      if (playAttempt && typeof playAttempt.then === 'function') {
+        playAttempt
+          .then(() => {
+            if (showStateRef.current !== 'SHOW_PLAYING') {
+              vid.pause();
+              vid.currentTime = 0;
+            }
+          })
+          .catch(() => {});
+      }
+    } catch {
+      // Ignore if not yet ready
+    }
+  }, []);
+
   // Begin the lighting dim -> video start sequence
   const beginShowSequence = useCallback(() => {
     if (showState !== 'AUDITORIUM_OPEN') return;
     cinemaAudioEngine.unlockFromGesture();
+    primeVideoForGesture(getActiveVideoEl());
     if (autoStartTimerRef.current) {
       window.clearTimeout(autoStartTimerRef.current);
       autoStartTimerRef.current = null;
@@ -289,7 +392,7 @@ export const VirtualCinemaPage: React.FC = () => {
     showStartingTimerRef.current = window.setTimeout(() => {
       setShowState('SHOW_PLAYING');
     }, 1250);
-  }, [showState, setShowState]);
+  }, [showState, setShowState, primeVideoForGesture, getActiveVideoEl]);
 
   // Once entrance walk finishes, smoothly start the show after a brief moment in the lit hall
   useEffect(() => {
@@ -385,8 +488,6 @@ export const VirtualCinemaPage: React.FC = () => {
             seatOffsetRatio,
             selectedTheaterConfig,
           );
-          cinemaAudioEngine.attachVideoElement(activeEl);
-          cinemaAudioEngine.attachVideoElement(standbyEl);
           cinemaAudioEngine.fadeInVideo(0.65, videoVolumeRef.current);
         }
 
@@ -400,8 +501,18 @@ export const VirtualCinemaPage: React.FC = () => {
           setDuration(activeEl.duration);
         }
 
+        activeEl.muted = audioSettingsRef.current.muted;
+        if (!cinemaAudioEngine.isVideoAttached(activeEl)) {
+          activeEl.volume = audioSettingsRef.current.muted
+            ? 0
+            : audioSettingsRef.current.masterVolume * audioSettingsRef.current.videoVolume;
+        }
+
         if (!isPausedRef.current) {
           await activeEl.play();
+          if (cinemaAudioEngine.isRunning && !cinemaAudioEngine.isVideoHijackDisabled) {
+            cinemaAudioEngine.attachVideoElement(activeEl);
+          }
         } else {
           activeEl.pause();
         }
@@ -575,18 +686,50 @@ export const VirtualCinemaPage: React.FC = () => {
     vid.addEventListener('ended', onEnded);
     vid.addEventListener('error', onError);
 
-    // Watchdog prevents unexpected browser media suspension or decoder stalls during long playback & fullscreen
+    // Watchdog prevents unexpected browser media suspension, decoder stalls, or silent mobile hijack
     const watchdogId = window.setInterval(() => {
-      if (
-        showState === 'SHOW_PLAYING' &&
-        !isPausedRef.current &&
-        !autoplayBlocked &&
-        !vid.ended &&
-        vid.paused &&
-        vid.readyState >= 2
-      ) {
+      if (showState !== 'SHOW_PLAYING' || isPausedRef.current || autoplayBlocked || vid.ended) {
+        silenceStreakRef.current = 0;
+        return;
+      }
+
+      if (vid.paused && vid.readyState >= 2) {
         cinemaAudioEngine.resume().catch(() => {});
         vid.play().catch(() => {});
+        return;
+      }
+
+      const audioCfg = audioSettingsRef.current;
+      vid.muted = audioCfg.muted;
+      if (!cinemaAudioEngine.isVideoAttached(vid)) {
+        vid.volume = audioCfg.muted ? 0 : audioCfg.masterVolume * audioCfg.videoVolume;
+        silenceStreakRef.current = 0;
+        return;
+      }
+
+      // If Web Audio hijacked <video> yet produces dead silence while decoded audio exists (mobile quirk), recover cleanly to native audio
+      if (!audioCfg.muted && audioCfg.masterVolume > 0.05 && audioCfg.videoVolume > 0.05 && !vid.paused) {
+        if (!cinemaAudioEngine.isRunning) {
+          silenceStreakRef.current += 1;
+        } else {
+          const decodedAudioBytes =
+            (vid as HTMLVideoElement & { webkitAudioDecodedByteCount?: number })
+              .webkitAudioDecodedByteCount ?? 0;
+          const mobileDevice = isMobileDevice();
+          if (
+            !cinemaAudioEngine.hasActiveVideoSignal() &&
+            vid.currentTime > 0.7 &&
+            (decodedAudioBytes > 0 || mobileDevice)
+          ) {
+            silenceStreakRef.current += 1;
+          } else {
+            silenceStreakRef.current = 0;
+          }
+        }
+
+        if (silenceStreakRef.current >= 2) {
+          replaceActiveDeckWithNative();
+        }
       }
     }, 600);
 
@@ -606,12 +749,15 @@ export const VirtualCinemaPage: React.FC = () => {
     };
   }, [
     activeDeck,
+    deckAEl,
+    deckBEl,
     showState,
     currentItem,
     selectedTheaterConfig,
     fourDxSettings,
     autoplayBlocked,
     advancePlaylistOrComplete,
+    replaceActiveDeckWithNative,
     setIsPaused,
   ]);
 
@@ -813,17 +959,25 @@ export const VirtualCinemaPage: React.FC = () => {
     if (!vid) return;
     try {
       cinemaAudioEngine.unlockFromGesture();
+      vid.muted = audioSettings.muted;
+      if (!cinemaAudioEngine.isVideoAttached(vid)) {
+        vid.volume = audioSettings.muted
+          ? 0
+          : audioSettings.masterVolume * audioSettings.videoVolume;
+      }
+      const playPromise = vid.play();
       const seatOffsetRatio =
         selectedSeat.worldPosition[0] /
         Math.max(1, selectedTheaterConfig.auditoriumWidth / 2);
+      await playPromise;
       await cinemaAudioEngine.initialize(
         selectedTheaterConfig.audioProfile,
         seatOffsetRatio,
         selectedTheaterConfig,
       );
-      cinemaAudioEngine.attachVideoElement(vid);
-      vid.muted = audioSettings.muted;
-      await vid.play();
+      if (cinemaAudioEngine.isRunning && !cinemaAudioEngine.isVideoHijackDisabled) {
+        cinemaAudioEngine.attachVideoElement(vid);
+      }
       setAutoplayBlocked(false);
       setIsPaused(false);
     } catch {
@@ -947,6 +1101,7 @@ export const VirtualCinemaPage: React.FC = () => {
             type="button"
             onClick={() => {
               cinemaAudioEngine.unlockFromGesture();
+              primeVideoForGesture(getActiveVideoEl());
               setSkipWalkSignal((n) => n + 1);
             }}
             className="shrink-0 rounded border border-white/20 px-3 py-1 text-[11px] font-medium text-[#F4F1EA] hover:border-[#D4AF37] cursor-pointer"
@@ -974,11 +1129,13 @@ export const VirtualCinemaPage: React.FC = () => {
         </div>
       )}
 
-      {/* Mobile Audio Unlock Prompt if OS kept Web Audio suspended during playback */}
+      {/* Mobile Audio Unlock Prompt only if Web Audio attached a video yet OS suspended AudioContext */}
       {showState === 'SHOW_PLAYING' &&
         !isPaused &&
         !audioSettings.muted &&
         !audioRunning &&
+        !cinemaAudioEngine.isVideoHijackDisabled &&
+        cinemaAudioEngine.isVideoAttached(activeDeck === 'A' ? deckAEl : deckBEl) &&
         !autoplayBlocked && (
           <div className="absolute top-24 sm:top-16 left-1/2 z-30 -translate-x-1/2">
             <button

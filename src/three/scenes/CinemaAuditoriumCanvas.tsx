@@ -115,15 +115,15 @@ export const CinemaAuditoriumCanvas: React.FC<CinemaAuditoriumCanvasProps> = Rea
     );
   }
 
-  // Use crisp Retina DPR on mobile & desktop hardware GPUs while capping overhead for 60fps video smoothness
+  // Use crisp Retina DPR on mobile & desktop hardware GPUs while keeping 60fps touch rotation smoothness
   const isMobile = isMobileDevice();
   const dpr: number | [number, number] = webglInfo.isSoftwareGl
     ? 0.75
     : graphicsQuality === 'low'
-      ? [1, 1.35]
+      ? [1, 1.25]
       : graphicsQuality === 'medium'
-        ? [1, 1.75]
-        : [1, 2];
+        ? [1, isMobile ? 1.5 : 1.75]
+        : [1, isMobile ? 1.85 : 2];
 
   const initialFov = computeAdaptiveCinemaFov(
     config.categoryId,
@@ -143,7 +143,7 @@ export const CinemaAuditoriumCanvas: React.FC<CinemaAuditoriumCanvasProps> = Rea
       : 0;
 
   return (
-    <div className="relative h-full w-full bg-[#030305]">
+    <div className="relative h-full w-full bg-[#030305] touch-none select-none">
       {contextLost && (
         <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/90 p-6 text-center">
           <p className="font-display text-2xl text-[#F4F1EA]">Graphics Context Interrupted</p>
@@ -242,6 +242,7 @@ export const CinemaAuditoriumCanvas: React.FC<CinemaAuditoriumCanvasProps> = Rea
           resetViewSignal={resetViewSignal}
           skipWalkSignal={skipWalkSignal}
           isPlaying={isActivelyPlaying}
+          isSoftwareGl={webglInfo.isSoftwareGl}
           fourDxCameraIntensity={active4dxCamera}
         />
       </Canvas>

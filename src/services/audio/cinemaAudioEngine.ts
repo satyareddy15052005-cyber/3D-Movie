@@ -1,4 +1,5 @@
 import { AudioProfile, AudioSettings, TheaterConfiguration } from '../../types/cinema';
+import { isIosDevice, isMobileDevice } from '../../utils/formatters';
 
 type SpeakerChannelId =
   | 'L'
@@ -26,14 +27,16 @@ class CinemaAudioEngine {
   private ambienceGain: GainNode | null = null;
   private effectsGain: GainNode | null = null;
 
-  // Input conditioning & spatial bypass vs Dolby 7.1.2 HRTF array
+  // Input conditioning & spatial bypass vs Dolby 7.1.2 spatial array
   private lowShelf: BiquadFilterNode | null = null;
   private highShelf: BiquadFilterNode | null = null;
   private inputBus: GainNode | null = null;
+  private signalAnalyser: AnalyserNode | null = null;
+  private analyserBuf: Float32Array<ArrayBuffer> | null = null;
   private stereoDirectGain: GainNode | null = null;
   private dolbyBusGain: GainNode | null = null;
 
-  // Channel matrix & HRTF panners
+  // Channel matrix & panners
   private splitter: ChannelSplitterNode | null = null;
   private panners = new Map<SpeakerChannelId, PannerNode>();
   private surroundWidthGains: GainNode[] = [];
@@ -61,6 +64,7 @@ class CinemaAudioEngine {
   private lastSpatialEnabled = true;
   private isInitialized = false;
   private iosSilenceUnlocked = false;
+  private videoHijackDisabled = isIosDevice();
 
   public async initialize(
     audioProfile: AudioProfile,
@@ -194,65 +198,75 @@ class CinemaAudioEngine {
     this.inputBus.channelCountMode = 'explicit';
     this.inputBus.channelInterpretation = 'speakers';
 
+    this.signalAnalyser = ctx.createAnalyser();
+    this.signalAnalyser.fftSize = 256;
+    this.analyserBuf = new Float32Array(this.signalAnalyser.fftSize);
+
     this.stereoDirectGain = ctx.createGain();
     this.stereoDirectGain.gain.value = 0;
 
     this.dolbyBusGain = ctx.createGain();
-    this.dolbyBusGain.gain.value = 1;
+    this.dolbyBusGain.gain.value = 1.18;
 
     // Input conditioning chain
     this.lowShelf.connect(this.highShelf);
     this.highShelf.connect(this.inputBus);
+    this.inputBus.connect(this.signalAnalyser);
 
     // Direct Stereo Bypass path (used when spatialSimulation === false)
     this.inputBus.connect(this.stereoDirectGain);
     this.stereoDirectGain.connect(this.videoGain);
 
-    // Build 7.1.2 Dolby Cinema Spatial Matrix -> HRTF Panners
+    // Build 7.1.2 Dolby Cinema Spatial Matrix -> HRTF (desktop) / equalpower (mobile) Panners
     this.splitter = ctx.createChannelSplitter(2);
     this.inputBus.connect(this.splitter);
 
-    const createHrtfPanner = (
+    const mobile = isMobileDevice();
+    const createSpatialPanner = (
       id: SpeakerChannelId,
       pos: [number, number, number],
       dir: [number, number, number],
-      refDist = 10,
-      rolloff = 0.55,
+      refDist = 12,
+      rolloff = 0.45,
     ): PannerNode => {
       const p = ctx.createPanner();
-      try {
-        p.panningModel = 'HRTF';
-      } catch {
+      if (mobile) {
         p.panningModel = 'equalpower';
+      } else {
+        try {
+          p.panningModel = 'HRTF';
+        } catch {
+          p.panningModel = 'equalpower';
+        }
       }
       p.distanceModel = 'inverse';
       p.refDistance = refDist;
       p.maxDistance = 120;
       p.rolloffFactor = rolloff;
-      p.coneInnerAngle = 115;
-      p.coneOuterAngle = 225;
-      p.coneOuterGain = 0.45;
+      p.coneInnerAngle = 120;
+      p.coneOuterAngle = 235;
+      p.coneOuterGain = 0.55;
       this.setPannerTransform(p, pos, dir);
       p.connect(this.dolbyBusGain!);
       this.panners.set(id, p);
       return p;
     };
 
-    const panL = createHrtfPanner('L', [-6, 5, -12], [0.25, -0.1, 1], 11, 0.52);
-    const panC = createHrtfPanner('C', [0, 5, -12], [0, -0.1, 1], 11, 0.5);
-    const panR = createHrtfPanner('R', [6, 5, -12], [-0.25, -0.1, 1], 11, 0.52);
-    const panLs = createHrtfPanner('Ls', [-10, 4.5, 0], [1, -0.25, 0], 9, 0.62);
-    const panRs = createHrtfPanner('Rs', [10, 4.5, 0], [-1, -0.25, 0], 9, 0.62);
-    const panLrs = createHrtfPanner('Lrs', [-6, 4.5, 12], [0.35, -0.2, -1], 9.5, 0.62);
-    const panRrs = createHrtfPanner('Rrs', [6, 4.5, 12], [-0.35, -0.2, -1], 9.5, 0.62);
-    const panTopL = createHrtfPanner('TopL', [-4.5, 9.5, -1], [0.2, -1, 0], 8.5, 0.58);
-    const panTopR = createHrtfPanner('TopR', [4.5, 9.5, -1], [-0.2, -1, 0], 8.5, 0.58);
+    const panL = createSpatialPanner('L', [-6, 5, -12], [0.25, -0.1, 1], 14, 0.45);
+    const panC = createSpatialPanner('C', [0, 5, -12], [0, -0.1, 1], 14, 0.42);
+    const panR = createSpatialPanner('R', [6, 5, -12], [-0.25, -0.1, 1], 14, 0.45);
+    const panLs = createSpatialPanner('Ls', [-10, 4.5, 0], [1, -0.25, 0], 11, 0.52);
+    const panRs = createSpatialPanner('Rs', [10, 4.5, 0], [-1, -0.25, 0], 11, 0.52);
+    const panLrs = createSpatialPanner('Lrs', [-6, 4.5, 12], [0.35, -0.2, -1], 11, 0.52);
+    const panRrs = createSpatialPanner('Rrs', [6, 4.5, 12], [-0.35, -0.2, -1], 11, 0.52);
+    const panTopL = createSpatialPanner('TopL', [-4.5, 9.5, -1], [0.2, -1, 0], 10, 0.48);
+    const panTopR = createSpatialPanner('TopR', [4.5, 9.5, -1], [-0.2, -1, 0], 10, 0.48);
 
     // 1. Front Screen L / R Direct Screen Feeds
     const lMainGain = ctx.createGain();
-    lMainGain.gain.value = 0.74;
+    lMainGain.gain.value = 0.85;
     const rMainGain = ctx.createGain();
-    rMainGain.gain.value = 0.74;
+    rMainGain.gain.value = 0.85;
     this.splitter.connect(lMainGain, 0);
     this.splitter.connect(rMainGain, 1);
     lMainGain.connect(panL);
@@ -261,8 +275,8 @@ class CinemaAudioEngine {
     // 2. Center Dialogue Channel (L + R Mid Matrix -> Vocal Presence EQ -> Center Screen Panner)
     const cMixL = ctx.createGain();
     const cMixR = ctx.createGain();
-    cMixL.gain.value = 0.34;
-    cMixR.gain.value = 0.34;
+    cMixL.gain.value = 0.42;
+    cMixR.gain.value = 0.42;
     const centerPresence = ctx.createBiquadFilter();
     centerPresence.type = 'peaking';
     centerPresence.frequency.value = 2300;
@@ -478,8 +492,8 @@ class CinemaAudioEngine {
     const surroundY = Math.min(H - 1.4, Math.max(2.5, topTierY + 2.0));
     const backZ = L / 2;
 
-    const screenRefDist = Math.max(4.5, L * 0.48);
-    const surroundRefDist = Math.max(3.8, Math.min(W, L) * 0.44);
+    const screenRefDist = Math.max(8.0, L * 0.78);
+    const surroundRefDist = Math.max(6.5, Math.min(W, L) * 0.65);
 
     const poses: Record<SpeakerChannelId, SpeakerPose> = {
       L: {
@@ -626,12 +640,12 @@ class CinemaAudioEngine {
   }
 
   public attachVideoElement(videoEl: HTMLVideoElement): void {
+    if (this.videoHijackDisabled) return;
     this.pendingVideos.add(videoEl);
     if (!this.ctx || !this.lowShelf) return;
     if (this.videoSources.has(videoEl)) return;
-    // Do NOT hijack <video> into a suspended AudioContext (mobile browsers would output 0 audio).
-    // flushPendingVideos() connects the element as soon as AudioContext transitions to 'running'.
-    if (this.ctx.state !== 'running') return;
+    // Only bind <video> after AudioContext is running and media has decoded frames
+    if (this.ctx.state !== 'running' || videoEl.readyState < 2) return;
 
     try {
       const src = this.ctx.createMediaElementSource(videoEl);
@@ -644,9 +658,9 @@ class CinemaAudioEngine {
   }
 
   private flushPendingVideos(): void {
-    if (!this.ctx || !this.lowShelf || this.ctx.state !== 'running') return;
+    if (this.videoHijackDisabled || !this.ctx || !this.lowShelf || this.ctx.state !== 'running') return;
     this.pendingVideos.forEach((videoEl) => {
-      if (this.videoSources.has(videoEl)) return;
+      if (this.videoSources.has(videoEl) || videoEl.readyState < 2) return;
       try {
         const src = this.ctx!.createMediaElementSource(videoEl);
         src.connect(this.lowShelf!);
@@ -660,6 +674,32 @@ class CinemaAudioEngine {
       const { settings, showState, windActive, windIntensity } = this.lastMixState;
       this.updateMix(settings, showState, windActive, windIntensity);
     }
+  }
+
+  public disableVideoHijack(): void {
+    this.videoHijackDisabled = true;
+    this.pendingVideos.clear();
+    this.videoSources.forEach((src) => {
+      try {
+        src.disconnect();
+      } catch {
+        // Ignore
+      }
+    });
+    this.videoSources.clear();
+  }
+
+  public hasActiveVideoSignal(): boolean {
+    if (!this.signalAnalyser || !this.analyserBuf || this.ctx?.state !== 'running') {
+      return false;
+    }
+    this.signalAnalyser.getFloatTimeDomainData(this.analyserBuf);
+    for (let i = 0; i < this.analyserBuf.length; i++) {
+      if (Math.abs(this.analyserBuf[i]) > 1e-5) {
+        return true;
+      }
+    }
+    return false;
   }
 
   public updateMix(
@@ -683,16 +723,16 @@ class CinemaAudioEngine {
     const master = settings.muted ? 0 : settings.masterVolume;
     this.masterGain.gain.setTargetAtTime(master, now, 0.08);
 
-    // Crossfade cleanly between full 3D HRTF Dolby speaker array and direct stereo bypass
+    // Crossfade cleanly between full 3D Dolby speaker array and direct stereo bypass
     if (this.dolbyBusGain && this.stereoDirectGain) {
       this.lastSpatialEnabled = settings.spatialSimulation;
-      this.dolbyBusGain.gain.setTargetAtTime(settings.spatialSimulation ? 1 : 0, now, 0.12);
+      this.dolbyBusGain.gain.setTargetAtTime(settings.spatialSimulation ? 1.18 : 0, now, 0.12);
       this.stereoDirectGain.gain.setTargetAtTime(settings.spatialSimulation ? 0 : 1, now, 0.12);
     }
 
     // Prioritize uploaded video audio during show
     const targetVideoGain = showState === 'SHOW_PLAYING' ? settings.videoVolume : 0.02;
-    this.videoGain.gain.setTargetAtTime(targetVideoGain, now, 0.25);
+    this.videoGain.gain.setTargetAtTime(targetVideoGain, now, 0.18);
 
     // Subtle auditorium ambience before & after show, very quiet during show
     const ambienceMultiplier = showState === 'SHOW_PLAYING' ? 0.08 : 0.22;
@@ -851,6 +891,8 @@ class CinemaAudioEngine {
     this.lowShelf = null;
     this.highShelf = null;
     this.inputBus = null;
+    this.signalAnalyser = null;
+    this.analyserBuf = null;
     this.stereoDirectGain = null;
     this.dolbyBusGain = null;
     this.splitter = null;
@@ -864,6 +906,7 @@ class CinemaAudioEngine {
     this.lastMixState = null;
     this.isInitialized = false;
     this.iosSilenceUnlocked = false;
+    this.videoHijackDisabled = isIosDevice();
     this.notifyStateChange();
   }
 
@@ -882,6 +925,10 @@ class CinemaAudioEngine {
 
   public isVideoAttached(videoEl: HTMLVideoElement | null): boolean {
     return Boolean(videoEl && this.videoSources.has(videoEl));
+  }
+
+  public get isVideoHijackDisabled(): boolean {
+    return this.videoHijackDisabled;
   }
 
   public get initialized(): boolean {

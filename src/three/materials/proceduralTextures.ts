@@ -350,7 +350,7 @@ export function createExitSignTexture(): THREE.CanvasTexture {
   return tex;
 }
 
-export function createStandbyScreenTexture(theaterName: string): THREE.CanvasTexture {
+export function createStandbyScreenTexture(_theaterName: string): THREE.CanvasTexture {
   const canvas = document.createElement('canvas');
   canvas.width = 1280;
   canvas.height = 640;
@@ -371,22 +371,37 @@ export function createStandbyScreenTexture(theaterName: string): THREE.CanvasTex
   ctx.lineWidth = 1;
   ctx.strokeRect(60, 60, 1160, 520);
 
-  ctx.fillStyle = '#d4af37';
-  ctx.font = '600 24px Georgia, serif';
-  ctx.textAlign = 'center';
-  ctx.fillText('AURELIA CINEMA', 640, 248);
+  const standbyText = 'Tin factory GSR ra neeee akkkkkkkkkaaaaa';
+  const words = standbyText.split(' ');
+  const splitIdx = Math.ceil(words.length / 2);
+  const line1 = words.slice(0, splitIdx).join(' ');
+  const line2 = words.slice(splitIdx).join(' ');
+
+  let fontSize = 42;
+  const maxWidth = 660;
+  while (fontSize > 22) {
+    ctx.font = `600 ${fontSize}px Georgia, serif`;
+    if (
+      ctx.measureText(line1).width <= maxWidth &&
+      ctx.measureText(line2).width <= maxWidth
+    ) {
+      break;
+    }
+    fontSize -= 2;
+  }
 
   ctx.fillStyle = '#f4f1ea';
-  ctx.font = '500 54px Georgia, serif';
-  ctx.fillText(theaterName.toUpperCase(), 640, 320);
-
-  ctx.fillStyle = '#9ca3af';
-  ctx.font = '400 20px sans-serif';
-  ctx.fillText('HOUSE LIGHTS DIMMING SHORTLY  ·  FEATURE PRESENTATION', 640, 386);
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = 'rgba(212, 175, 55, 0.28)';
+  ctx.shadowBlur = 14;
+  ctx.fillText(line1, 640, 292);
+  ctx.fillText(line2, 640, 350);
+  ctx.shadowBlur = 0;
 
   const tex = new THREE.CanvasTexture(canvas);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
+  tex.anisotropy = 8;
   return tex;
 }
 
