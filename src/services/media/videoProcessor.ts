@@ -6,14 +6,16 @@ const SUPPORTED_MIME_TYPES = [
   'video/webm',
   'video/x-matroska',
   'video/matroska',
+  'video/quicktime',
 ];
-const SUPPORTED_EXTENSIONS = ['.mp4', '.m4v', '.webm', '.mkv'];
+const SUPPORTED_EXTENSIONS = ['.mp4', '.m4v', '.webm', '.mkv', '.mov'];
 
 function inferVideoMimeType(file: File): string {
   if (file.type) return file.type;
   const lower = file.name.toLowerCase();
   if (lower.endsWith('.webm')) return 'video/webm';
   if (lower.endsWith('.mkv')) return 'video/x-matroska';
+  if (lower.endsWith('.mov')) return 'video/quicktime';
   return 'video/mp4';
 }
 
@@ -52,10 +54,11 @@ export function validateVideoFile(file: File): string | null {
   const hasValidExt = SUPPORTED_EXTENSIONS.some((ext) => lowerName.endsWith(ext));
   const hasValidMime =
     SUPPORTED_MIME_TYPES.includes(file.type) ||
+    file.type.startsWith('video/') ||
     ((file.type === '' || file.type === 'application/octet-stream') && hasValidExt);
 
   if (!hasValidMime && !hasValidExt) {
-    return `Unsupported format "${file.name}". Please upload an MP4, WebM, or MKV video file.`;
+    return `Unsupported format "${file.name}". Please upload an MP4, MOV, WebM, or MKV video file.`;
   }
 
   if (file.size === 0) {
@@ -107,7 +110,7 @@ export function extractVideoMetadata(objectUrl: string): Promise<ExtractedVideoM
         cleanup();
         reject(
           new Error(
-            'Unable to decode this video file in your browser. Please verify the codec (H.264/MP4, VP8/VP9/WebM, or browser-compatible MKV).',
+            'Unable to decode this video file in your browser. Please verify the codec (H.264/MP4, MOV, VP8/VP9/WebM, or browser-compatible MKV).',
           ),
         );
       }
@@ -136,14 +139,14 @@ export function extractVideoMetadata(objectUrl: string): Promise<ExtractedVideoM
         return;
       }
 
-      // If thumbnail seek takes too long (common with large MKV files), continue without thumbnail
+      // If thumbnail seek takes too long (common on mobile or large MKV files), continue without thumbnail
       seekFallbackTimer = window.setTimeout(() => {
         if (!settled) {
           settled = true;
           cleanup();
           resolve({ duration, width, height, thumbnailUrl: null });
         }
-      }, 2200);
+      }, 1800);
 
       // Seek slightly into the file to capture an actual frame thumbnail
       const seekTime = Math.min(Math.max(duration * 0.08, 0.25), Math.max(duration - 0.1, 0));

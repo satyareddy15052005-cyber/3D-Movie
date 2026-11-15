@@ -32,12 +32,21 @@ export type SeatModelType =
 export type SeatPatternType = 'straight' | 'curved_arc' | 'twin_pods' | 'staggered';
 
 export type SideLightStyle =
-  | 'classic_sconces'
-  | 'vertical_pillars'
-  | 'diagonal_blades'
-  | 'arched_ribs'
-  | 'horizontal_coving'
-  | 'minimal_wash';
+  | 'brass_torchieres'
+  | 'art_deco_stepped_fins'
+  | 'crisscross_geometric'
+  | 'monolith_totems'
+  | 'aurora_ribbon_waves'
+  | 'horizon_tier_strips'
+  | 'kinetic_chevron_blades'
+  | 'velocity_racing_stripes'
+  | 'glacier_hex_matrix'
+  | 'obsidian_slat_grazers'
+  | 'diagonal_parabolic_ribs'
+  | 'tiered_cantilever_shelves'
+  | 'walnut_alabaster_lanterns'
+  | 'floating_halo_alcoves'
+  | 'chevron_louver_columns';
 
 export type CeilingLightStyle =
   | 'puck_grid'

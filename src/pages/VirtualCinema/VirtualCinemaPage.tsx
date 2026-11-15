@@ -334,7 +334,7 @@ export const VirtualCinemaPage: React.FC = () => {
     }
   }, [activeDeck, deckAEl, deckBEl, showNativeFullVideo]);
 
-  // Preload current item on active deck & next playlist item metadata on standby deck
+  // Preload current item on active deck & next playlist item metadata on standby deck (desktop only to prevent mobile decoder exhaustion)
   useEffect(() => {
     const vidA = deckARef.current;
     const vidB = deckBRef.current;
@@ -342,14 +342,14 @@ export const VirtualCinemaPage: React.FC = () => {
 
     const curr = playlist[currentPlaybackIndex];
     const next = playlist[currentPlaybackIndex + 1];
+    const mobile = isMobileDevice();
 
-    const activeKey = activeDeck;
+    const activeKey = mobile ? 'A' : activeDeck;
     const standbyKey: 'A' | 'B' = activeKey === 'A' ? 'B' : 'A';
     const activeEl = activeKey === 'A' ? vidA : vidB;
     const standbyEl = standbyKey === 'A' ? vidA : vidB;
 
     activeEl.preload = 'auto';
-    standbyEl.preload = 'metadata';
 
     if (curr && loadedUrlRef.current[activeKey] !== curr.objectUrl) {
       loadedUrlRef.current[activeKey] = curr.objectUrl;
@@ -358,12 +358,26 @@ export const VirtualCinemaPage: React.FC = () => {
       activeEl.load();
     }
 
-    if (next && loadedUrlRef.current[standbyKey] !== next.objectUrl) {
-      loadedUrlRef.current[standbyKey] = next.objectUrl;
-      standbyEl.pause();
-      standbyEl.src = next.objectUrl;
-      standbyEl.currentTime = 0;
-      standbyEl.load();
+    if (mobile) {
+      if (loadedUrlRef.current[standbyKey]) {
+        loadedUrlRef.current[standbyKey] = '';
+        try {
+          standbyEl.pause();
+          standbyEl.removeAttribute('src');
+          standbyEl.load();
+        } catch {
+          // Ignore cleanup
+        }
+      }
+    } else {
+      standbyEl.preload = 'metadata';
+      if (next && loadedUrlRef.current[standbyKey] !== next.objectUrl) {
+        loadedUrlRef.current[standbyKey] = next.objectUrl;
+        standbyEl.pause();
+        standbyEl.src = next.objectUrl;
+        standbyEl.currentTime = 0;
+        standbyEl.load();
+      }
     }
   }, [playlist, currentPlaybackIndex, activeDeck]);
 
@@ -478,7 +492,16 @@ export const VirtualCinemaPage: React.FC = () => {
     };
   }, []);
 
-  // Load and play current playlist item cleanly using Dual-Deck readiness wait
+  // Reset track-advance guard & stall counters cleanly after React finishes transitioning to a new track
+  useEffect(() => {
+    advancingForIndexRef.current = null;
+    silenceStreakRef.current = 0;
+    frozenTicksRef.current = 0;
+    lastProgressedTimeRef.current = -1;
+    lastUiTimeRef.current = -1;
+  }, [currentPlaybackIndex, showState]);
+
+  // Load and play current playlist item cleanly using Dual-Deck (desktop) or Single-Blessed-Deck (mobile)
   useEffect(() => {
     const vidA = deckARef.current;
     const vidB = deckBRef.current;
@@ -521,20 +544,24 @@ export const VirtualCinemaPage: React.FC = () => {
     let cancelled = false;
 
     const waitUntilPlayable = (el: HTMLVideoElement): Promise<void> => {
-      if (el.readyState >= 2) return Promise.resolve();
+      if (el.readyState >= 2 || el.error) return Promise.resolve();
       return new Promise((resolve) => {
         let settled = false;
         const finish = () => {
           if (settled) return;
           settled = true;
           el.removeEventListener('canplay', finish);
+          el.removeEventListener('canplaythrough', finish);
           el.removeEventListener('loadeddata', finish);
+          el.removeEventListener('error', finish);
           window.clearTimeout(timer);
           resolve();
         };
         el.addEventListener('canplay', finish);
+        el.addEventListener('canplaythrough', finish);
         el.addEventListener('loadeddata', finish);
-        const timer = window.setTimeout(finish, 2500);
+        el.addEventListener('error', finish);
+        const timer = window.setTimeout(finish, 6000);
       });
     };
 
@@ -550,7 +577,7 @@ export const VirtualCinemaPage: React.FC = () => {
             seatOffsetRatio,
             selectedTheaterConfig,
           );
-          cinemaAudioEngine.fadeInVideo(0.65, videoVolumeRef.current);
+          cinemaAudioEngine.fadeInVideo(0.55, videoVolumeRef.current);
         }
 
         await waitUntilPlayable(activeEl);
@@ -571,6 +598,7 @@ export const VirtualCinemaPage: React.FC = () => {
         }
 
         if (!isPausedRef.current) {
+          await cinemaAudioEngine.resume().catch(() => {});
           await activeEl.play();
           if (cinemaAudioEngine.isRunning && !cinemaAudioEngine.isVideoHijackDisabled) {
             cinemaAudioEngine.attachVideoElement(activeEl);
@@ -616,32 +644,43 @@ export const VirtualCinemaPage: React.FC = () => {
     }
   }, [isPaused, showState, activeDeck]);
 
-  // Advance cleanly from active deck to preloaded standby deck
+  // Advance cleanly without double-skipping; reuse gesture-blessed Deck A on mobile
   const advancePlaylistOrComplete = useCallback(() => {
     if (advancingForIndexRef.current === currentPlaybackIndex) return;
     advancingForIndexRef.current = currentPlaybackIndex;
 
-    const currentEl = activeDeckRef.current === 'A' ? deckARef.current : deckBRef.current;
+    const mobile = isMobileDevice();
+    const currentKey = activeDeckRef.current;
+    const currentEl = currentKey === 'A' ? deckARef.current : deckBRef.current;
     if (currentEl) {
       currentEl.pause();
     }
 
     if (currentPlaybackIndex + 1 < playlist.length) {
       const nextIndex = currentPlaybackIndex + 1;
-      const nextDeck: 'A' | 'B' = activeDeckRef.current === 'A' ? 'B' : 'A';
+      const nextItem = playlist[nextIndex];
+      const nextDeck: 'A' | 'B' = mobile ? currentKey : currentKey === 'A' ? 'B' : 'A';
+
+      if (mobile && currentEl && nextItem) {
+        loadedUrlRef.current[nextDeck] = nextItem.objectUrl;
+        currentEl.src = nextItem.objectUrl;
+        currentEl.currentTime = 0;
+        currentEl.load();
+      }
+
       setCurrentTime(0);
-      setActiveDeck(nextDeck);
+      if (nextDeck !== currentKey) {
+        setActiveDeck(nextDeck);
+      }
       setCurrentPlaybackIndex(nextIndex);
-      advancingForIndexRef.current = null;
     } else {
       cinemaAudioEngine.fadeOutVideo(0.9);
       setShowState('SHOW_COMPLETED');
       setShowCompleted(true);
-      advancingForIndexRef.current = null;
     }
   }, [
     currentPlaybackIndex,
-    playlist.length,
+    playlist,
     setCurrentPlaybackIndex,
     setShowState,
     setShowCompleted,
@@ -989,19 +1028,24 @@ export const VirtualCinemaPage: React.FC = () => {
   const handleRestartShow = () => {
     cinemaAudioEngine.unlockFromGesture();
     advancingForIndexRef.current = null;
+    silenceStreakRef.current = 0;
+    frozenTicksRef.current = 0;
+    lastProgressedTimeRef.current = -1;
     const vidA = deckARef.current;
     const vidB = deckBRef.current;
+    const mobile = isMobileDevice();
     if (vidA && playlist[0]) {
       vidA.pause();
       if (loadedUrlRef.current.A !== playlist[0].objectUrl) {
         loadedUrlRef.current.A = playlist[0].objectUrl;
         vidA.src = playlist[0].objectUrl;
+        vidA.load();
       }
       vidA.currentTime = 0;
     }
     if (vidB) {
       vidB.pause();
-      if (playlist[1]) {
+      if (!mobile && playlist[1]) {
         loadedUrlRef.current.B = playlist[1].objectUrl;
         vidB.src = playlist[1].objectUrl;
         vidB.currentTime = 0;

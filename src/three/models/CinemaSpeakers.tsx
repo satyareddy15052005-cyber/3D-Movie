@@ -142,7 +142,8 @@ export const CinemaSpeakers: React.FC<CinemaSpeakersProps> = ({
   const backZ = L / 2;
   const isWarmBrass =
     environmentProfile.architectureStyle === 'private' ||
-    config.sideLightStyle === 'classic_sconces';
+    config.sideLightStyle === 'brass_torchieres' ||
+    config.sideLightStyle === 'art_deco_stepped_fins';
 
   const speakerScale = useMemo(
     () => Math.min(1.18, Math.max(0.76, W / 19.5)),

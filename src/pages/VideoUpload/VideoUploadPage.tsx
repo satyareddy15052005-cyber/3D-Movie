@@ -75,28 +75,37 @@ export const VideoUploadPage: React.FC = () => {
 
     const filesToProcess = videoMode === 'without_ads' ? [files[0]] : files;
     const processed: PlaylistItem[] = [];
+    const errors: string[] = [];
 
     try {
       for (let i = 0; i < filesToProcess.length; i++) {
         const file = filesToProcess[i];
-        const item = await processUploadedVideoFile(
-          file,
-          playlist.length + processed.length,
-          (stage) => setProcessingLabel(stage),
-        );
-        processed.push(item);
+        try {
+          const item = await processUploadedVideoFile(
+            file,
+            playlist.length + processed.length,
+            (stage) => setProcessingLabel(stage),
+          );
+          processed.push(item);
+        } catch (err) {
+          errors.push(
+            err instanceof Error ? err.message : `Unable to read "${file.name}".`,
+          );
+        }
       }
 
       if (processed.length > 0) {
         addPlaylistItems(processed);
         if (videoMode === 'without_ads') {
           setPreviewItem(processed[0]);
+        } else if (!previewItem) {
+          setPreviewItem(processed[0]);
         }
       }
-    } catch (err) {
-      setUploadError(
-        err instanceof Error ? err.message : 'Unable to read the selected video file.',
-      );
+
+      if (errors.length > 0) {
+        setUploadError(errors[0]);
+      }
     } finally {
       setProcessingLabel(null);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -230,7 +239,7 @@ export const VideoUploadPage: React.FC = () => {
         <input
           ref={fileInputRef}
           type="file"
-          accept="video/mp4,video/webm,video/x-matroska,video/matroska,.mp4,.m4v,.webm,.mkv"
+          accept="video/mp4,video/webm,video/x-matroska,video/matroska,video/quicktime,.mp4,.m4v,.webm,.mkv,.mov,video/*"
           multiple={videoMode === 'with_ads'}
           className="hidden"
           onChange={(e) => handleFilesSelected(e.target.files)}
@@ -238,7 +247,7 @@ export const VideoUploadPage: React.FC = () => {
         <input
           ref={replaceInputRef}
           type="file"
-          accept="video/mp4,video/webm,video/x-matroska,video/matroska,.mp4,.m4v,.webm,.mkv"
+          accept="video/mp4,video/webm,video/x-matroska,video/matroska,video/quicktime,.mp4,.m4v,.webm,.mkv,.mov,video/*"
           multiple={false}
           className="hidden"
           onChange={(e) => handleReplaceFile(e.target.files)}

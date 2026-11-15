@@ -226,6 +226,7 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
   const lastSamplerMsRef = useRef(0);
   const lastSamplerTexRef = useRef<THREE.Texture | null>(null);
   const uploadedDeckRef = useRef<{ A: boolean; B: boolean }>({ A: false, B: false });
+  const lastVideoSrcByDeckRef = useRef<{ A: string; B: string }>({ A: '', B: '' });
   const currentBounceGainRef = useRef(0);
   const isMobile = useMemo(() => isMobileDevice(), []);
 
@@ -534,10 +535,10 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
 
           vec3 viewDir = normalize(vViewPos);
           float fresnel = pow(abs(dot(normalize(vNormal), viewDir)), ${edgePow.toFixed(2)});
-          // Delicate dusty atmospheric beam exiting projector lens, softly fading toward screen
-          float distFade = smoothstep(0.0, 0.14, vBeamT) * mix(0.68, 0.12, pow(vBeamT, 0.55));
-          float alpha = fresnel * distFade * uOpacity * (0.07 + min(lum * 0.65, 0.45));
-          gl_FragColor = vec4(beamCol * 0.85, alpha);
+          // Calibrated atmospheric dusty beam exiting booth lens, tapering softly toward screen
+          float distFade = smoothstep(0.0, 0.08, vBeamT) * mix(0.92, 0.18, pow(vBeamT, 0.62));
+          float alpha = fresnel * distFade * uOpacity * (0.24 + min(lum * 0.85, 0.68));
+          gl_FragColor = vec4(beamCol * 1.15, alpha);
         }
       `,
       transparent: true,
@@ -686,6 +687,24 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
     const currentTex = activeDeck === 'A' ? texARef.current : texBRef.current;
     const backupTex = activeDeck === 'A' ? texBRef.current : texARef.current;
     const backupEl = activeDeck === 'A' ? videoElementB : videoElementA;
+    const standbyKey: 'A' | 'B' = activeDeck === 'A' ? 'B' : 'A';
+
+    // Detect playlist item switch on the same <video> deck (e.g. mobile single-deck With Ads queue)
+    const activeSrcStr = currentEl?.currentSrc || currentEl?.src || '';
+    if (activeSrcStr !== lastVideoSrcByDeckRef.current[activeDeck]) {
+      lastVideoSrcByDeckRef.current[activeDeck] = activeSrcStr;
+      uploadedDeckRef.current[activeDeck] = false;
+      lastDecodedFramesRef.current = -1;
+      lastVideoTimeRef.current = -1;
+      lastActiveTexRef.current = null;
+      lastSamplerTexRef.current = null;
+    }
+
+    const backupSrcStr = backupEl?.currentSrc || backupEl?.src || '';
+    if (backupSrcStr !== lastVideoSrcByDeckRef.current[standbyKey]) {
+      lastVideoSrcByDeckRef.current[standbyKey] = backupSrcStr;
+      uploadedDeckRef.current[standbyKey] = false;
+    }
 
     const currentHasData = (currentEl?.readyState ?? 0) >= 2;
     const backupHasData = (backupEl?.readyState ?? 0) >= 2;
@@ -693,19 +712,19 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
     if (currentHasData) {
       uploadedDeckRef.current[activeDeck] = true;
     }
-    const standbyKey = activeDeck === 'A' ? 'B' : 'A';
     if (backupHasData) {
       uploadedDeckRef.current[standbyKey] = true;
     }
 
     const currentReady =
       Boolean(currentEl) &&
-      Boolean(currentEl?.currentSrc || currentEl?.src) &&
+      Boolean(activeSrcStr) &&
       (currentHasData || uploadedDeckRef.current[activeDeck]);
 
     const backupReady =
+      !activeSrcStr &&
       Boolean(backupEl) &&
-      Boolean(backupEl?.currentSrc || backupEl?.src) &&
+      Boolean(backupSrcStr) &&
       (backupHasData || uploadedDeckRef.current[standbyKey]);
 
     let activeTex: THREE.Texture = standbyTexture;
@@ -819,11 +838,11 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
       );
     }
 
-    // Restrained atmospheric projector beam (kept ultra-subtle on mobile wide FOV so frame stays crisp)
+    // Calibrated volumetric projector beam: clearly visible and cinematic on desktop, restrained on mobile
     const beamActive = showState === 'SHOW_PLAYING' && isVideo;
-    const outerTarget = beamActive ? (isPaused ? 0.008 : isMobile ? 0.022 : 0.042) : 0.0;
-    const innerTarget = beamActive ? (isPaused ? 0.005 : isMobile ? 0.014 : 0.026) : 0.0;
-    const flareTarget = beamActive ? (isPaused ? 0.05 : isMobile ? 0.1 : 0.16) : 0.02;
+    const outerTarget = beamActive ? (isPaused ? 0.045 : isMobile ? 0.075 : 0.185) : 0.0;
+    const innerTarget = beamActive ? (isPaused ? 0.03 : isMobile ? 0.052 : 0.135) : 0.0;
+    const flareTarget = beamActive ? (isPaused ? 0.16 : isMobile ? 0.24 : 0.48) : 0.04;
 
     if (outerBeamMatRef.current) {
       outerBeamMatRef.current.uniforms.uScreenLightTex.value = gpuLightSampler.rt.texture;

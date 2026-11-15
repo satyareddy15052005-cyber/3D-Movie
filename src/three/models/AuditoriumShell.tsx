@@ -11,6 +11,7 @@ import {
   ScreenBounceUniforms,
 } from '../lighting/screenBounceShader';
 import { CinemaSpeakers } from './CinemaSpeakers';
+import { SideWallLighting } from './SideWallLighting';
 
 interface AuditoriumShellProps {
   config: TheaterConfiguration;
@@ -158,7 +159,8 @@ export const AuditoriumShell: React.FC<AuditoriumShellProps> = ({
       new THREE.MeshStandardMaterial({
         color:
           environmentProfile.architectureStyle === 'private' ||
-          sideLightStyle === 'classic_sconces'
+          sideLightStyle === 'brass_torchieres' ||
+          sideLightStyle === 'art_deco_stepped_fins'
             ? '#b89446'
             : '#323744',
         roughness: 0.28,
@@ -229,14 +231,6 @@ export const AuditoriumShell: React.FC<AuditoriumShellProps> = ({
       roughness: 0.38,
       metalness: 0.45,
     });
-    const sconceWashMat = new THREE.MeshBasicMaterial({
-      map: textures.sconceWashMap,
-      color: lightingProfile.wallColor,
-      transparent: true,
-      opacity: 0.45,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    });
 
     // Dedicated Projection Booth Materials
     const boothInteriorWallMat = new THREE.MeshStandardMaterial({
@@ -283,14 +277,13 @@ export const AuditoriumShell: React.FC<AuditoriumShellProps> = ({
       posterMat,
       curtainMat,
       extinguisherMat,
-      sconceWashMat,
       boothInteriorWallMat,
       boothFloorMat,
       boothGlassMat,
       projectorBodyMat,
       projectorChromeMat,
     };
-  }, [textures, environmentProfile, lightingProfile.wallColor, sideLightStyle, screenBounceUniforms]);
+  }, [textures, environmentProfile, sideLightStyle, screenBounceUniforms]);
 
   useEffect(() => {
     return () => {
@@ -301,7 +294,6 @@ export const AuditoriumShell: React.FC<AuditoriumShellProps> = ({
   // Step lights remain ALWAYS ON during the entire show; house lights dim cleanly when lightFactor -> 0
   materials.posterMat.emissiveIntensity = 0.02 + lightFactor * 0.46;
   materials.entranceSignMat.opacity = 0.08 + lightFactor * 0.92;
-  materials.sconceWashMat.opacity = lightFactor * 0.42;
 
   const stepEmissiveIntensity = 1.45;
   const rowBadgeOpacity = 0.65 + lightFactor * 0.35;
@@ -847,209 +839,16 @@ export const AuditoriumShell: React.FC<AuditoriumShellProps> = ({
       ))}
 
       {/* ===================================================================== */}
-      {/* ARCHITECTURAL SIDE WALL BAYS & DISTINCT SIDE LIGHTING FIXTURES        */}
+      {/* ARCHITECTURAL SIDE WALL BAYS & 15 DISTINCT REALISTIC LIGHT DESIGNS    */}
       {/* ===================================================================== */}
-      {wallBayZs.map((bz, idx) =>
-        [-1, 1].map((side) => {
-          const sconceY =
-            environmentProfile.architectureStyle === 'private'
-              ? Math.min(H * 0.58, 2.55)
-              : Math.min(H * 0.56, topTierY + 2.1);
-
-          return (
-            <group key={`wall-bay-${idx}-${side}`}>
-              {/* Acoustic Wall Pilaster */}
-              <mesh
-                position={[side * (W / 2 - 0.26), H * 0.48, bz]}
-                material={materials.trimMetalMat}
-                castShadow
-              >
-                <boxGeometry args={[0.18, H * 0.88, 0.28]} />
-              </mesh>
-
-              {/* Framed Acoustic Wall Panel between Pilasters */}
-              {idx < wallBayZs.length - 1 && (
-                <mesh
-                  position={[
-                    side * (W / 2 - 0.22),
-                    H * 0.52,
-                    (bz + wallBayZs[idx + 1]) / 2,
-                  ]}
-                  material={materials.acousticPanelMat}
-                  receiveShadow
-                >
-                  <boxGeometry
-                    args={[0.08, H * 0.68, Math.abs(wallBayZs[idx + 1] - bz) - 0.6]}
-                  />
-                </mesh>
-              )}
-
-              {/* Style 1: Classic Sculpted Brass Wall Sconces */}
-              {sideLightStyle === 'classic_sconces' && (
-                <group position={[side * (W / 2 - 0.36), sconceY, bz]}>
-                  <mesh material={materials.trimMetalMat}>
-                    <boxGeometry args={[0.08, 0.42, 0.24]} />
-                  </mesh>
-                  <mesh position={[-side * 0.07, 0.06, 0]} material={materials.trimMetalMat}>
-                    <cylinderGeometry args={[0.14, 0.06, 0.32, 12]} />
-                  </mesh>
-                  <mesh position={[-side * 0.07, 0.22, 0]}>
-                    <cylinderGeometry args={[0.12, 0.12, 0.08, 12]} />
-                    <meshStandardMaterial
-                      color="#101218"
-                      emissive={lightingProfile.wallColor}
-                      emissiveIntensity={wallAccentIntensity}
-                    />
-                  </mesh>
-                  <mesh position={[-side * 0.07, -0.14, 0]}>
-                    <cylinderGeometry args={[0.07, 0.04, 0.12, 12]} />
-                    <meshStandardMaterial
-                      color="#101218"
-                      emissive={lightingProfile.wallColor}
-                      emissiveIntensity={wallAccentIntensity * 0.9}
-                    />
-                  </mesh>
-                </group>
-              )}
-
-              {/* Style 2: Tall Vertical Architectural Light Pillars */}
-              {sideLightStyle === 'vertical_pillars' && (
-                <group position={[side * (W / 2 - 0.38), H * 0.5, bz]}>
-                  <mesh material={materials.trimMetalMat}>
-                    <boxGeometry args={[0.1, H * 0.72, 0.26]} />
-                  </mesh>
-                  <mesh position={[-side * 0.04, 0, 0]}>
-                    <boxGeometry args={[0.05, H * 0.64, 0.11]} />
-                    <meshStandardMaterial
-                      color="#101218"
-                      emissive={lightingProfile.wallColor}
-                      emissiveIntensity={wallAccentIntensity}
-                    />
-                  </mesh>
-                </group>
-              )}
-
-              {/* Style 3: Canted 4DX Kinetic Diagonal Blades */}
-              {sideLightStyle === 'diagonal_blades' && (
-                <group
-                  position={[side * (W / 2 - 0.38), sconceY + 0.3, bz + 0.35]}
-                  rotation={[0.48, 0, 0]}
-                >
-                  <mesh material={materials.trimMetalMat}>
-                    <boxGeometry args={[0.16, 1.85, 0.24]} />
-                  </mesh>
-                  <mesh position={[-side * 0.05, 0, 0.04]}>
-                    <boxGeometry args={[0.06, 1.68, 0.09]} />
-                    <meshStandardMaterial
-                      color="#101218"
-                      emissive={lightingProfile.wallColor}
-                      emissiveIntensity={wallAccentIntensity * 1.08}
-                    />
-                  </mesh>
-                  <mesh position={[-side * 0.05, 0, -0.06]}>
-                    <boxGeometry args={[0.05, 1.68, 0.05]} />
-                    <meshStandardMaterial
-                      color="#101218"
-                      emissive={lightingProfile.accentColor}
-                      emissiveIntensity={wallAccentIntensity * 0.9}
-                    />
-                  </mesh>
-                </group>
-              )}
-
-              {/* Style 4: Sweeping Arched Wall-to-Ceiling Ribs */}
-              {sideLightStyle === 'arched_ribs' && (
-                <group position={[0, 0, bz]}>
-                  {/* Lower vertical rib */}
-                  <mesh
-                    position={[side * (W / 2 - 0.34), H * 0.38, 0]}
-                    material={materials.trimMetalMat}
-                  >
-                    <boxGeometry args={[0.14, H * 0.66, 0.24]} />
-                  </mesh>
-                  <mesh position={[side * (W / 2 - 0.42), H * 0.38, 0]}>
-                    <boxGeometry args={[0.05, H * 0.6, 0.09]} />
-                    <meshStandardMaterial
-                      color="#101218"
-                      emissive={lightingProfile.wallColor}
-                      emissiveIntensity={wallAccentIntensity}
-                    />
-                  </mesh>
-                  {/* Angled upper cove haunch */}
-                  <mesh
-                    position={[side * (W / 2 - 0.88), H - 0.85, 0]}
-                    rotation={[0, 0, side * 0.68]}
-                    material={materials.trimMetalMat}
-                  >
-                    <boxGeometry args={[0.18, 1.8, 0.24]} />
-                  </mesh>
-                  <mesh
-                    position={[side * (W / 2 - 0.94), H - 0.9, 0]}
-                    rotation={[0, 0, side * 0.68]}
-                  >
-                    <boxGeometry args={[0.05, 1.65, 0.09]} />
-                    <meshStandardMaterial
-                      color="#101218"
-                      emissive={lightingProfile.accentColor}
-                      emissiveIntensity={wallAccentIntensity * 0.95}
-                    />
-                  </mesh>
-                </group>
-              )}
-
-              {/* Style 6: Minimal Boutique Gallery Wash */}
-              {sideLightStyle === 'minimal_wash' && (
-                <group position={[side * (W / 2 - 0.33), sconceY, bz]}>
-                  <mesh material={materials.trimMetalMat}>
-                    <boxGeometry args={[0.06, 0.22, 0.68]} />
-                  </mesh>
-                  <mesh position={[-side * 0.02, 0.08, 0]}>
-                    <boxGeometry args={[0.04, 0.05, 0.56]} />
-                    <meshStandardMaterial
-                      color="#101218"
-                      emissive={lightingProfile.wallColor}
-                      emissiveIntensity={wallAccentIntensity}
-                    />
-                  </mesh>
-                </group>
-              )}
-
-              {/* Soft Up/Down Wall Sconce Light-Wash Halo (Dims completely to 0 during playback) */}
-              {lightFactor > 0.01 && (
-                <mesh
-                  position={[side * (W / 2 - 0.25), sconceY, bz]}
-                  rotation={[0, (side * -Math.PI) / 2, 0]}
-                  material={materials.sconceWashMat}
-                >
-                  <planeGeometry args={[1.65, 3.3]} />
-                </mesh>
-              )}
-            </group>
-          );
-        }),
-      )}
-
-      {/* Style 5: Continuous Dual-Level Horizontal Coving Bands Along Left & Right Walls */}
-      {sideLightStyle === 'horizontal_coving' &&
-        [-1, 1].map((side) => (
-          <group key={`horiz-cove-${side}`}>
-            {[H * 0.36, H * 0.68].map((cy, ci) => (
-              <group key={`hc-${ci}`} position={[side * (W / 2 - 0.31), cy, 0]}>
-                <mesh material={materials.trimMetalMat}>
-                  <boxGeometry args={[0.12, 0.14, L - 3.8]} />
-                </mesh>
-                <mesh position={[-side * 0.05, 0, 0]}>
-                  <boxGeometry args={[0.04, 0.06, L - 4.0]} />
-                  <meshStandardMaterial
-                    color="#101218"
-                    emissive={ci === 0 ? lightingProfile.wallColor : lightingProfile.accentColor}
-                    emissiveIntensity={wallAccentIntensity}
-                  />
-                </mesh>
-              </group>
-            ))}
-          </group>
-        ))}
+      <SideWallLighting
+        config={config}
+        wallBayZs={wallBayZs}
+        topTierY={topTierY}
+        lightFactor={lightFactor}
+        trimMetalMat={materials.trimMetalMat}
+        acousticPanelMat={materials.acousticPanelMat}
+      />
 
       {/* ===================================================================== */}
       {/* DISTINCT CEILING ARCHITECTURES & LIGHTING STYLES                      */}
