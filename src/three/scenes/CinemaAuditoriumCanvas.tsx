@@ -75,14 +75,32 @@ export const CinemaAuditoriumCanvas: React.FC<CinemaAuditoriumCanvasProps> = Rea
   const webglInfo = useMemo(() => detectWebGLSupport(), []);
   const [contextLost, setContextLost] = useState(false);
   const [lightFactor, setLightFactor] = useState(1);
-  const [isFullscreen, setIsFullscreen] = useState(
-    () => typeof document !== 'undefined' && Boolean(document.fullscreenElement),
+  const detectAnyFullscreen = () => {
+    if (typeof document === 'undefined' || typeof window === 'undefined') return false;
+    if (document.fullscreenElement) return true;
+    if (isMobileDevice()) return false;
+    return (
+      window.innerHeight >= window.screen.height - 40 &&
+      window.innerWidth >= window.screen.width - 40
+    );
+  };
+
+  const [isFullscreen, setIsFullscreen] = useState(detectAnyFullscreen);
+  const [viewportPixels, setViewportPixels] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth * window.innerHeight : 1280 * 720,
   );
 
   useEffect(() => {
-    const onFs = () => setIsFullscreen(Boolean(document.fullscreenElement));
-    document.addEventListener('fullscreenchange', onFs);
-    return () => document.removeEventListener('fullscreenchange', onFs);
+    const syncViewportMetrics = () => {
+      setIsFullscreen(detectAnyFullscreen());
+      setViewportPixels(window.innerWidth * window.innerHeight);
+    };
+    document.addEventListener('fullscreenchange', syncViewportMetrics);
+    window.addEventListener('resize', syncViewportMetrics);
+    return () => {
+      document.removeEventListener('fullscreenchange', syncViewportMetrics);
+      window.removeEventListener('resize', syncViewportMetrics);
+    };
   }, []);
   const screenBrightnessRef = useRef(0.34);
   const screenBounceRef = useRef<ScreenBounceSample>({
@@ -124,8 +142,9 @@ export const CinemaAuditoriumCanvas: React.FC<CinemaAuditoriumCanvasProps> = Rea
     );
   }
 
-  // Cap Retina/4K and mobile pixel ratio cleanly so camera rotation and video decode stay fluid
+  // Cap Retina/4K/fullscreen laptop pixel ratio cleanly at 1:1 native resolution so video decode & WebGL stay 60fps smooth
   const isMobile = isMobileDevice();
+  const isLargeViewport = viewportPixels >= 1_050_000;
   const dpr: number | [number, number] = webglInfo.isSoftwareGl
     ? 0.75
     : isMobile
@@ -134,15 +153,13 @@ export const CinemaAuditoriumCanvas: React.FC<CinemaAuditoriumCanvasProps> = Rea
         : graphicsQuality === 'medium'
           ? [1, 1.15]
           : [1, 1.25]
-      : isFullscreen
-        ? graphicsQuality === 'low'
-          ? [1, 1.1]
-          : [1, 1.25]
+      : isFullscreen || isLargeViewport
+        ? 1
         : graphicsQuality === 'low'
-          ? [1, 1.2]
+          ? 1
           : graphicsQuality === 'medium'
-            ? [1, 1.5]
-            : [1, 1.75];
+            ? [1, 1.2]
+            : [1, 1.35];
 
   const initialFov = computeAdaptiveCinemaFov(
     config.categoryId,
@@ -173,10 +190,11 @@ export const CinemaAuditoriumCanvas: React.FC<CinemaAuditoriumCanvasProps> = Rea
       )}
 
       <Canvas
-        shadows={!webglInfo.isSoftwareGl && graphicsQuality === 'high' && !isMobile}
+        shadows={!webglInfo.isSoftwareGl && graphicsQuality === 'high' && !isMobile && !isFullscreen}
         dpr={dpr}
         gl={{
-          antialias: !webglInfo.isSoftwareGl,
+          antialias: !webglInfo.isSoftwareGl && graphicsQuality !== 'low',
+          stencil: false,
           powerPreference: 'high-performance',
           toneMapping: THREE.ACESFilmicToneMapping,
           toneMappingExposure: 1.05,
@@ -199,6 +217,7 @@ export const CinemaAuditoriumCanvas: React.FC<CinemaAuditoriumCanvasProps> = Rea
           config={config}
           showState={showState}
           isPaused={isPaused}
+          isFullscreen={isFullscreen}
           isSoftwareGl={webglInfo.isSoftwareGl || graphicsQuality === 'low'}
           onLightFactorChange={handleLightFactorChange}
           fourDxFlashRef={fourDxFlashRef}

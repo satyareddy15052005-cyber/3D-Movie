@@ -207,8 +207,8 @@ function buildErgonomicCushionGeo(w: number, h: number, d: number): THREE.Buffer
     bevelEnabled: true,
     bevelThickness: 0.028,
     bevelSize: 0.022,
-    bevelSegments: 4,
-    curveSegments: 8,
+    bevelSegments: 2,
+    curveSegments: 5,
   });
   geo.translate(0, 0, -innerW / 2);
   geo.rotateY(-Math.PI / 2);
@@ -236,8 +236,8 @@ function buildErgonomicBackrestGeo(w: number, h: number, d: number): THREE.Buffe
     bevelEnabled: true,
     bevelThickness: 0.028,
     bevelSize: 0.022,
-    bevelSegments: 4,
-    curveSegments: 10,
+    bevelSegments: 2,
+    curveSegments: 6,
   });
   geo.translate(0, 0, -innerW / 2);
   geo.rotateY(-Math.PI / 2);
@@ -264,8 +264,8 @@ function buildHeadrestPillowGeo(w: number, h: number, d: number): THREE.BufferGe
     bevelEnabled: true,
     bevelThickness: 0.024,
     bevelSize: 0.02,
-    bevelSegments: 4,
-    curveSegments: 8,
+    bevelSegments: 2,
+    curveSegments: 5,
   });
   geo.translate(0, 0, -innerW / 2);
   geo.rotateY(-Math.PI / 2);
@@ -292,8 +292,8 @@ function buildSculptedArmrestGeo(w: number, h: number, d: number): THREE.BufferG
     bevelEnabled: true,
     bevelThickness: 0.014,
     bevelSize: 0.012,
-    bevelSegments: 3,
-    curveSegments: 6,
+    bevelSegments: 2,
+    curveSegments: 4,
   });
   geo.translate(0, 0, -innerW / 2);
   geo.rotateY(-Math.PI / 2);
@@ -344,18 +344,13 @@ export const SeatModels: React.FC<SeatModelsProps> = ({
 
   const materials = useMemo(() => {
     const primaryMat = applyScreenBounceToMaterial(
-      new THREE.MeshPhysicalMaterial({
+      new THREE.MeshStandardMaterial({
         color: '#ffffff',
         map: upholsteryTex.map,
         bumpMap: upholsteryTex.bumpMap,
         bumpScale: isLeather ? 0.008 : 0.012,
-        roughness: isLeather ? 0.28 : 0.68,
-        metalness: isLeather ? 0.06 : 0.01,
-        sheen: isLeather ? 0 : 1.0,
-        sheenRoughness: 0.42,
-        sheenColor: new THREE.Color('#f4f4f8'),
-        clearcoat: isLeather ? 0.7 : 0,
-        clearcoatRoughness: 0.22,
+        roughness: isLeather ? 0.26 : 0.72,
+        metalness: isLeather ? 0.08 : 0.02,
       }),
       screenBounceUniforms,
     );
@@ -584,19 +579,24 @@ export const SeatModels: React.FC<SeatModelsProps> = ({
   }, [seats, selectedSeatId, hoveredSeatId, props, environmentProfile.seatPrimaryColor, isPlaying]);
 
   useFrame(({ clock }) => {
-    if (!seatGroupRef.current) return;
+    const grp = seatGroupRef.current;
+    if (!grp) return;
     if (seatModel === '4dx_motion' && isPlaying && fourDxVibration > 0.01) {
       const t = clock.getElapsedTime();
       const heave = Math.sin(t * 2.4) * 0.032 + Math.sin(t * 14.5) * 0.01;
       const pitch = Math.sin(t * 1.65) * 0.024 + Math.cos(t * 3.1) * 0.008;
       const roll = Math.cos(t * 1.25) * 0.022;
-      seatGroupRef.current.position.y = heave * fourDxVibration;
-      seatGroupRef.current.rotation.x = pitch * fourDxVibration;
-      seatGroupRef.current.rotation.z = roll * fourDxVibration;
-    } else {
-      seatGroupRef.current.position.y = THREE.MathUtils.lerp(seatGroupRef.current.position.y, 0, 0.12);
-      seatGroupRef.current.rotation.x = THREE.MathUtils.lerp(seatGroupRef.current.rotation.x, 0, 0.12);
-      seatGroupRef.current.rotation.z = THREE.MathUtils.lerp(seatGroupRef.current.rotation.z, 0, 0.12);
+      grp.position.y = heave * fourDxVibration;
+      grp.rotation.x = pitch * fourDxVibration;
+      grp.rotation.z = roll * fourDxVibration;
+    } else if (
+      grp.position.y !== 0 ||
+      grp.rotation.x !== 0 ||
+      grp.rotation.z !== 0
+    ) {
+      grp.position.y = Math.abs(grp.position.y) < 1e-4 ? 0 : THREE.MathUtils.lerp(grp.position.y, 0, 0.14);
+      grp.rotation.x = Math.abs(grp.rotation.x) < 1e-4 ? 0 : THREE.MathUtils.lerp(grp.rotation.x, 0, 0.14);
+      grp.rotation.z = Math.abs(grp.rotation.z) < 1e-4 ? 0 : THREE.MathUtils.lerp(grp.rotation.z, 0, 0.14);
     }
   });
 

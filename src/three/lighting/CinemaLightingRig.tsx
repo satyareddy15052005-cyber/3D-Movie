@@ -9,6 +9,7 @@ interface CinemaLightingRigProps {
   config: TheaterConfiguration;
   showState: ShowState;
   isPaused?: boolean;
+  isFullscreen?: boolean;
   isSoftwareGl: boolean;
   onLightFactorChange?: (factor: number) => void;
   fourDxFlashRef?: React.MutableRefObject<{ level: number; color: string }>;
@@ -20,6 +21,7 @@ export const CinemaLightingRig: React.FC<CinemaLightingRigProps> = ({
   config,
   showState,
   isPaused = false,
+  isFullscreen = false,
   isSoftwareGl,
   onLightFactorChange,
   fourDxFlashRef,
@@ -76,6 +78,23 @@ export const CinemaLightingRig: React.FC<CinemaLightingRigProps> = ({
 
     // Dim IBL reflections completely to 0 when house lights turn off so video reflections dominate cleanly
     scene.environmentIntensity = f * 0.36;
+
+    // Skip expensive shadow map geometry passes when house lights are dimmed or during fullscreen movie playback
+    if (gl.shadowMap.enabled) {
+      const shouldUpdateShadows =
+        !isSoftwareGl &&
+        !isFullscreen &&
+        f > 0.02 &&
+        !(showState === 'SHOW_PLAYING' && !isPaused);
+      if (shouldUpdateShadows) {
+        if (!gl.shadowMap.autoUpdate) {
+          gl.shadowMap.autoUpdate = true;
+          gl.shadowMap.needsUpdate = true;
+        }
+      } else if (gl.shadowMap.autoUpdate) {
+        gl.shadowMap.autoUpdate = false;
+      }
+    }
 
     const flashLevel = fourDxFlashRef?.current.level ?? 0;
     const flashColor = fourDxFlashRef?.current.color ?? '#7dd3fc';

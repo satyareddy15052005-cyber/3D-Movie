@@ -216,13 +216,10 @@ export const AuditoriumShell: React.FC<AuditoriumShellProps> = ({
       roughness: 0.3,
     });
     const curtainMat = applyScreenBounceToMaterial(
-      new THREE.MeshPhysicalMaterial({
+      new THREE.MeshStandardMaterial({
         map: textures.curtainMap,
-        roughness: 0.9,
+        roughness: 0.88,
         metalness: 0.02,
-        sheen: 0.55,
-        sheenRoughness: 0.78,
-        sheenColor: new THREE.Color('#3a2528'),
         side: THREE.DoubleSide,
       }),
       screenBounceUniforms,
@@ -252,13 +249,12 @@ export const AuditoriumShell: React.FC<AuditoriumShellProps> = ({
       roughness: 0.75,
       metalness: 0.2,
     });
-    const boothGlassMat = new THREE.MeshPhysicalMaterial({
+    const boothGlassMat = new THREE.MeshStandardMaterial({
       color: '#1b2638',
       transparent: true,
-      opacity: 0.2,
-      roughness: 0.06,
-      metalness: 0.15,
-      reflectivity: 0.9,
+      opacity: 0.22,
+      roughness: 0.08,
+      metalness: 0.25,
       depthWrite: false,
     });
     const projectorBodyMat = new THREE.MeshStandardMaterial({

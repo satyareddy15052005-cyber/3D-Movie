@@ -218,12 +218,12 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
   const texBRef = useRef<THREE.VideoTexture | null>(null);
 
   const lastVideoTimeRef = useRef(-1);
+  const lastDecodedFramesRef = useRef(-1);
   const lastActiveTexRef = useRef<THREE.Texture | null>(null);
   const lastUploadMsRef = useRef(0);
   const lastSamplerMsRef = useRef(0);
   const lastSamplerTexRef = useRef<THREE.Texture | null>(null);
   const uploadedDeckRef = useRef<{ A: boolean; B: boolean }>({ A: false, B: false });
-  const rVfcPendingRef = useRef<{ A: boolean; B: boolean }>({ A: false, B: false });
   const currentBounceGainRef = useRef(0);
   const isMobile = useMemo(() => isMobileDevice(), []);
 
@@ -242,10 +242,9 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
   useEffect(() => {
     const invalidateUpload = () => {
       lastVideoTimeRef.current = -1;
+      lastDecodedFramesRef.current = -1;
       lastUploadMsRef.current = 0;
       lastSamplerMsRef.current = 0;
-      rVfcPendingRef.current.A = true;
-      rVfcPendingRef.current.B = true;
     };
     document.addEventListener('fullscreenchange', invalidateUpload);
     window.addEventListener('resize', invalidateUpload);
@@ -358,26 +357,7 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
     texARef.current = tex;
     uploadedDeckRef.current.A = false;
 
-    let cancelled = false;
-    let rVfcId = 0;
-    const vidWithRvfc = videoElementA as HTMLVideoElement & {
-      requestVideoFrameCallback?: (cb: () => void) => number;
-      cancelVideoFrameCallback?: (id: number) => void;
-    };
-    if (typeof vidWithRvfc.requestVideoFrameCallback === 'function') {
-      const onFrame = () => {
-        if (cancelled) return;
-        rVfcPendingRef.current.A = true;
-        rVfcId = vidWithRvfc.requestVideoFrameCallback!(onFrame);
-      };
-      rVfcId = vidWithRvfc.requestVideoFrameCallback(onFrame);
-    }
-
     return () => {
-      cancelled = true;
-      if (rVfcId && typeof vidWithRvfc.cancelVideoFrameCallback === 'function') {
-        vidWithRvfc.cancelVideoFrameCallback(rVfcId);
-      }
       uploadedDeckRef.current.A = false;
       tex.dispose();
       if (texARef.current === tex) texARef.current = null;
@@ -398,26 +378,7 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
     texBRef.current = tex;
     uploadedDeckRef.current.B = false;
 
-    let cancelled = false;
-    let rVfcId = 0;
-    const vidWithRvfc = videoElementB as HTMLVideoElement & {
-      requestVideoFrameCallback?: (cb: () => void) => number;
-      cancelVideoFrameCallback?: (id: number) => void;
-    };
-    if (typeof vidWithRvfc.requestVideoFrameCallback === 'function') {
-      const onFrame = () => {
-        if (cancelled) return;
-        rVfcPendingRef.current.B = true;
-        rVfcId = vidWithRvfc.requestVideoFrameCallback!(onFrame);
-      };
-      rVfcId = vidWithRvfc.requestVideoFrameCallback(onFrame);
-    }
-
     return () => {
-      cancelled = true;
-      if (rVfcId && typeof vidWithRvfc.cancelVideoFrameCallback === 'function') {
-        vidWithRvfc.cancelVideoFrameCallback(rVfcId);
-      }
       uploadedDeckRef.current.B = false;
       tex.dispose();
       if (texBRef.current === tex) texBRef.current = null;
@@ -680,15 +641,9 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
 
           vec2 centered = vUv - 0.5;
           float radial = dot(centered, centered);
-          float projectorFalloff = 1.0 - radial * 0.11;
+          float projectorFalloff = 1.0 - radial * 0.08;
 
-          float microGain = 1.0;
-          if (uIsVideo > 0.5) {
-            float perf = sin(vUv.x * 960.0) * sin(vUv.y * 540.0);
-            microGain = 1.0 + perf * 0.0025;
-          }
-
-          vec3 finalCol = linearRgb * uBrightness * projectorFalloff * microGain;
+          vec3 finalCol = linearRgb * uBrightness * projectorFalloff;
           gl_FragColor = vec4(finalCol, 1.0);
           #include <colorspace_fragment>
         }
@@ -764,26 +719,23 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
     }
 
     const isVideo = activeTex !== standbyTexture;
-    const activeKey: 'A' | 'B' | null =
-      activeTex === texARef.current ? 'A' : activeTex === texBRef.current ? 'B' : null;
     const nowMs = performance.now();
 
-    // Smart VideoTexture upload driven by requestVideoFrameCallback (prevents redundant texImage2D stalls in fullscreen)
+    // Exact 1:1 decoded frame upload: relies on THREE.VideoTexture's built-in rVFC plus decoded-frame counter check
+    // so texImage2D never stalls by re-uploading identical frames on 60/120Hz displays.
     if (isVideo && activeVideo && activeVideo.readyState >= 2) {
-      const hasRvfc = 'requestVideoFrameCallback' in activeVideo;
-      const frameSignaled = activeKey ? rVfcPendingRef.current[activeKey] : false;
-      const timeChanged = activeVideo.currentTime !== lastVideoTimeRef.current;
+      const quality = typeof activeVideo.getVideoPlaybackQuality === 'function'
+        ? activeVideo.getVideoPlaybackQuality()
+        : null;
+      const totalFrames = quality ? quality.totalVideoFrames : -1;
+      const decodedChanged = totalFrames >= 0 && totalFrames !== lastDecodedFramesRef.current;
       const texChanged = activeTex !== lastActiveTexRef.current;
-      const fallbackInterval = isSoftwareGl ? 60 : 40;
-      const fallbackDue =
-        !hasRvfc &&
-        !activeVideo.paused &&
-        !activeVideo.ended &&
-        nowMs - lastUploadMsRef.current > fallbackInterval;
+      const hasRvfc = 'requestVideoFrameCallback' in activeVideo;
+      const timeChanged = !hasRvfc && activeVideo.currentTime !== lastVideoTimeRef.current;
 
-      if (frameSignaled || timeChanged || texChanged || fallbackDue) {
-        if (activeKey) {
-          rVfcPendingRef.current[activeKey] = false;
+      if (decodedChanged || texChanged || timeChanged) {
+        if (totalFrames >= 0) {
+          lastDecodedFramesRef.current = totalFrames;
         }
         lastVideoTimeRef.current = activeVideo.currentTime;
         lastActiveTexRef.current = activeTex;
@@ -792,9 +744,10 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
       }
     }
 
-    // Pace 32x18 GPU screen light sampling cleanly (~30Hz) so 60/120Hz fullscreen swaps stay butter smooth
+    // Pace 32x18 GPU screen light sampling cleanly (~24Hz) during active playback and skip when paused/static
     const samplerDue =
-      activeTex !== lastSamplerTexRef.current || nowMs - lastSamplerMsRef.current >= 32;
+      activeTex !== lastSamplerTexRef.current ||
+      (isVideo && !isPaused && nowMs - lastSamplerMsRef.current >= 42);
     if (samplerDue) {
       lastSamplerTexRef.current = activeTex;
       lastSamplerMsRef.current = nowMs;

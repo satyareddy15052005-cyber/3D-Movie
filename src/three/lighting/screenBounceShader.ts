@@ -100,35 +100,34 @@ if ( uScreenBounceGain > 0.001 ) {
   float dotNV = saturate( dot( geometryNormal, geometryViewDir ) );
   float invSpreadSq = 1.0 / max( 3.2, 0.082 * uScreenWorldSize.x * uScreenWorldSize.x );
 
-  // 3x2 (6-zone) deterministic area-light sampling across the live video frame
-  for ( int sbRow = 0; sbRow < 2; sbRow ++ ) {
-    float oy = ( sbRow == 0 ) ? -0.24 : 0.24;
-    for ( int sbCol = 0; sbCol < 3; sbCol ++ ) {
-      float ox = ( sbCol == 0 ) ? -0.34 : ( ( sbCol == 1 ) ? 0.0 : 0.34 );
-      vec3 patchRgb = decodeScreenBounceTex( vec2( 0.5 + ox, 0.5 + oy ) );
-      vec3 patchWorld = uScreenWorldPos + vec3( ox * uScreenWorldSize.x, oy * uScreenWorldSize.y, 0.16 );
-      vec3 toPatch = patchWorld - vScreenBounceWorldPos;
-      float distSq = dot( toPatch, toPatch );
-      float dist = sqrt( max( distSq, 0.25 ) );
-      vec3 dirWorld = toPatch / dist;
+  // 3-zone vertically blended screen area-light sampling (cuts PBR RE_Direct ALU in half while keeping full color gradients)
+  for ( int sbCol = 0; sbCol < 3; sbCol ++ ) {
+    float ox = ( sbCol == 0 ) ? -0.34 : ( ( sbCol == 1 ) ? 0.0 : 0.34 );
+    vec3 upperRgb = decodeScreenBounceTex( vec2( 0.5 + ox, 0.72 ) );
+    vec3 lowerRgb = decodeScreenBounceTex( vec2( 0.5 + ox, 0.28 ) );
+    vec3 patchRgb = mix( upperRgb, lowerRgb, 0.52 );
+    vec3 patchWorld = uScreenWorldPos + vec3( ox * uScreenWorldSize.x, 0.0, 0.16 );
+    vec3 toPatch = patchWorld - vScreenBounceWorldPos;
+    float distSq = dot( toPatch, toPatch );
+    float dist = sqrt( max( distSq, 0.25 ) );
+    vec3 dirWorld = toPatch / dist;
 
-      float dx = toPatch.x;
-      float lateralProx = 0.08 + 1.15 * exp( -dx * dx * invSpreadSq );
-      float screenForward = smoothstep( -0.12, 0.32, -dirWorld.z );
-      float atten = 1.0 / ( 1.0 + 0.028 * dist + 0.00065 * distSq );
+    float dx = toPatch.x;
+    float lateralProx = 0.08 + 1.15 * exp( -dx * dx * invSpreadSq );
+    float screenForward = smoothstep( -0.12, 0.32, -dirWorld.z );
+    float atten = 1.0 / ( 1.0 + 0.028 * dist + 0.00065 * distSq );
 
-      sbLight.direction = normalize( ( viewMatrix * vec4( dirWorld, 0.0 ) ).xyz );
-      sbLight.color = patchRgb * ( uScreenBounceGain * 0.42 * screenForward * atten * lateralProx );
-      sbLight.visible = ( sbLight.color.r + sbLight.color.g + sbLight.color.b ) > 0.0003;
+    sbLight.direction = normalize( ( viewMatrix * vec4( dirWorld, 0.0 ) ).xyz );
+    sbLight.color = patchRgb * ( uScreenBounceGain * 0.84 * screenForward * atten * lateralProx );
+    sbLight.visible = ( sbLight.color.r + sbLight.color.g + sbLight.color.b ) > 0.0003;
 
-      if ( sbLight.visible ) {
-        RE_Direct( sbLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight );
-        float softWrap = saturate( ( dot( geometryNormal, sbLight.direction ) + 0.38 ) / 1.38 );
-        float grazeRim = pow( 1.0 - dotNV, 1.65 );
-        // Velvet nap & satin leather topcoat catch true video colors cleanly even on dark upholstery
-        vec3 surfaceAlbedo = mix( material.diffuseColor, vec3( 0.135 ), 0.62 );
-        reflectedLight.indirectDiffuse += surfaceAlbedo * sbLight.color * ( softWrap * ( 0.22 + 0.18 * grazeRim ) );
-      }
+    if ( sbLight.visible ) {
+      RE_Direct( sbLight, geometryPosition, geometryNormal, geometryViewDir, geometryClearcoatNormal, material, reflectedLight );
+      float softWrap = saturate( ( dot( geometryNormal, sbLight.direction ) + 0.38 ) / 1.38 );
+      float grazeRim = pow( 1.0 - dotNV, 1.65 );
+      // Velvet nap & satin leather topcoat catch true video colors cleanly even on dark upholstery
+      vec3 surfaceAlbedo = mix( material.diffuseColor, vec3( 0.135 ), 0.62 );
+      reflectedLight.indirectDiffuse += surfaceAlbedo * sbLight.color * ( softWrap * ( 0.22 + 0.18 * grazeRim ) );
     }
   }
 
@@ -153,14 +152,10 @@ if ( uScreenBounceGain > 0.001 ) {
 
       if ( lobeMask > 0.001 ) {
         vec2 mprUv = clamp( clampedXY / max( uScreenWorldSize, vec2( 1.0 ) ) + 0.5, 0.02, 0.98 );
-        float coneSpread = 0.04 + rough * 0.2;
-        vec3 reflRgb = decodeScreenBounceTex( mprUv ) * 0.5
-                     + decodeScreenBounceTex( vec2( mprUv.x - coneSpread, mprUv.y ) ) * 0.25
-                     + decodeScreenBounceTex( vec2( mprUv.x + coneSpread, mprUv.y ) ) * 0.25;
+        float coneSpread = 0.035 + rough * 0.14;
+        vec3 reflRgb = ( decodeScreenBounceTex( vec2( mprUv.x - coneSpread, mprUv.y ) )
+                     + decodeScreenBounceTex( vec2( mprUv.x + coneSpread, mprUv.y ) ) ) * 0.5;
         vec3 f0 = max( material.specularColor, vec3( 0.06 ) );
-        #ifdef USE_CLEARCOAT
-          f0 = max( f0, vec3( 0.06 + 0.14 * material.clearcoat ) );
-        #endif
         vec3 fresnel = f0 + ( 1.0 - f0 ) * pow( 1.0 - dotNV, 2.8 );
         float mprDist = length( mprWorldPos - vScreenBounceWorldPos );
         float reflAtten = 1.0 / ( 1.0 + 0.018 * mprDist );

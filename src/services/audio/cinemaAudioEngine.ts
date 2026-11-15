@@ -566,9 +566,21 @@ class CinemaAudioEngine {
     }
   }
 
+  private lastPose = {
+    px: Number.NaN,
+    py: Number.NaN,
+    pz: Number.NaN,
+    fx: Number.NaN,
+    fy: Number.NaN,
+    fz: Number.NaN,
+    ux: Number.NaN,
+    uy: Number.NaN,
+    uz: Number.NaN,
+  };
+
   /**
-   * Updates Web Audio AudioListener position and head orientation every frame
-   * so rotating the camera 360° shifts the Dolby speaker sound field accurately around the viewer.
+   * Updates Web Audio AudioListener position and head orientation cleanly only when pose changes
+   * so rotating the camera 360° shifts the Dolby speaker sound field accurately without thrashing stationary frames.
    */
   public updateListenerPose(
     px: number,
@@ -583,6 +595,31 @@ class CinemaAudioEngine {
   ): void {
     const ctx = this.ctx;
     if (!ctx || !this.isInitialized) return;
+
+    const lp = this.lastPose;
+    if (
+      Math.abs(px - lp.px) < 1e-4 &&
+      Math.abs(py - lp.py) < 1e-4 &&
+      Math.abs(pz - lp.pz) < 1e-4 &&
+      Math.abs(fx - lp.fx) < 1e-4 &&
+      Math.abs(fy - lp.fy) < 1e-4 &&
+      Math.abs(fz - lp.fz) < 1e-4 &&
+      Math.abs(ux - lp.ux) < 1e-4 &&
+      Math.abs(uy - lp.uy) < 1e-4 &&
+      Math.abs(uz - lp.uz) < 1e-4
+    ) {
+      return;
+    }
+    lp.px = px;
+    lp.py = py;
+    lp.pz = pz;
+    lp.fx = fx;
+    lp.fy = fy;
+    lp.fz = fz;
+    lp.ux = ux;
+    lp.uy = uy;
+    lp.uz = uz;
+
     const listener = ctx.listener;
 
     if (listener.positionX) {
@@ -907,6 +944,7 @@ class CinemaAudioEngine {
     this.isInitialized = false;
     this.iosSilenceUnlocked = false;
     this.videoHijackDisabled = isIosDevice();
+    this.lastPose.px = Number.NaN;
     this.notifyStateChange();
   }
 

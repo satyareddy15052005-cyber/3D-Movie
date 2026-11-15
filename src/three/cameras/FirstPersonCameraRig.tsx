@@ -447,17 +447,47 @@ export const FirstPersonCameraRig: React.FC<FirstPersonCameraRigProps> = ({
     };
   }, [gl, entranceComplete, viewMode]);
 
+  const lastListenerPoseRef = useRef<number[] | null>(null);
+
   const syncAudioListener = () => {
     if (!cinemaAudioEngine.initialized) return;
     _listenerFwd.set(0, 0, -1).applyQuaternion(camera.quaternion);
     _listenerUp.set(0, 1, 0).applyQuaternion(camera.quaternion);
+    const px = camera.position.x;
+    const py = camera.position.y;
+    const pz = camera.position.z;
+    const fx = _listenerFwd.x;
+    const fy = _listenerFwd.y;
+    const fz = _listenerFwd.z;
+    const prev = lastListenerPoseRef.current;
+    if (
+      prev &&
+      Math.abs(prev[0] - px) < 1e-4 &&
+      Math.abs(prev[1] - py) < 1e-4 &&
+      Math.abs(prev[2] - pz) < 1e-4 &&
+      Math.abs(prev[3] - fx) < 1e-4 &&
+      Math.abs(prev[4] - fy) < 1e-4 &&
+      Math.abs(prev[5] - fz) < 1e-4
+    ) {
+      return;
+    }
+    if (prev) {
+      prev[0] = px;
+      prev[1] = py;
+      prev[2] = pz;
+      prev[3] = fx;
+      prev[4] = fy;
+      prev[5] = fz;
+    } else {
+      lastListenerPoseRef.current = [px, py, pz, fx, fy, fz];
+    }
     cinemaAudioEngine.updateListenerPose(
-      camera.position.x,
-      camera.position.y,
-      camera.position.z,
-      _listenerFwd.x,
-      _listenerFwd.y,
-      _listenerFwd.z,
+      px,
+      py,
+      pz,
+      fx,
+      fy,
+      fz,
       _listenerUp.x,
       _listenerUp.y,
       _listenerUp.z,

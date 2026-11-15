@@ -131,8 +131,8 @@ export const VirtualCinemaPage: React.FC = () => {
       ? 0
       : audioSettingsRef.current.masterVolume * audioSettingsRef.current.videoVolume;
     vid.disableRemotePlayback = true;
-    vid.style.width = '128px';
-    vid.style.height = '72px';
+    vid.style.width = '32px';
+    vid.style.height = '18px';
     vid.style.position = 'absolute';
     vid.style.top = '0';
     vid.style.left = '0';
@@ -611,7 +611,7 @@ export const VirtualCinemaPage: React.FC = () => {
       const d = Number.isFinite(vid.duration) ? vid.duration : 0;
       setCurrentTime(t);
       if (d > 0) {
-        setDuration(d);
+        setDuration((prev) => (Math.abs(prev - d) > 0.25 ? d : prev));
       }
 
       if (
@@ -708,12 +708,12 @@ export const VirtualCinemaPage: React.FC = () => {
 
       // Detect active playback stall/freeze (e.g., Chromium fullscreen compositor stall) and kick decoder gently
       const nowTime = vid.currentTime;
-      if (Math.abs(nowTime - lastProgressedTimeRef.current) < 0.004 && vid.readyState >= 2) {
+      if (Math.abs(nowTime - lastProgressedTimeRef.current) < 0.004 && vid.readyState >= 3) {
         frozenTicksRef.current += 1;
-        if (frozenTicksRef.current === 2) {
+        if (frozenTicksRef.current === 3) {
           cinemaAudioEngine.resume().catch(() => {});
           vid.play().catch(() => {});
-        } else if (frozenTicksRef.current >= 3) {
+        } else if (frozenTicksRef.current >= 5) {
           try {
             const dur = Number.isFinite(vid.duration) ? vid.duration : 0;
             if (dur === 0 || nowTime + 0.04 < dur) {
@@ -1075,7 +1075,7 @@ export const VirtualCinemaPage: React.FC = () => {
       <div
         ref={videoHostRef}
         aria-hidden="true"
-        className="pointer-events-none absolute bottom-0 left-0 z-[1] h-[72px] w-[128px] overflow-hidden opacity-[0.008]"
+        className="pointer-events-none absolute bottom-0 left-0 z-[1] h-[18px] w-[32px] overflow-hidden opacity-[0.015]"
       />
 
       {/* 3D Auditorium Canvas */}
