@@ -36,10 +36,12 @@ class CinemaAudioEngine {
   private stereoDirectGain: GainNode | null = null;
   private dolbyBusGain: GainNode | null = null;
 
-  // Channel matrix & panners
+  // Channel matrix & panners (kept cleanly separated so profile tuning never blasts surrounds)
   private splitter: ChannelSplitterNode | null = null;
   private panners = new Map<SpeakerChannelId, PannerNode>();
-  private surroundWidthGains: GainNode[] = [];
+  private sideSurroundGains: GainNode[] = [];
+  private rearSurroundGains: GainNode[] = [];
+  private atmosHeightGains: GainNode[] = [];
   private reverbNode: ConvolverNode | null = null;
   private reverbWetGain: GainNode | null = null;
   private lfeGain: GainNode | null = null;
@@ -53,11 +55,6 @@ class CinemaAudioEngine {
     windActive: boolean;
     windIntensity: number;
   } | null = null;
-
-  private ambienceSource: AudioBufferSourceNode | null = null;
-  private windSource: AudioBufferSourceNode | null = null;
-  private windFilter: BiquadFilterNode | null = null;
-  private windGain: GainNode | null = null;
 
   private currentProfile: AudioProfile | null = null;
   private currentConfig: TheaterConfiguration | null = null;
@@ -86,8 +83,6 @@ class CinemaAudioEngine {
         this.notifyStateChange();
       };
       this.buildAudioGraph();
-      this.startProceduralAmbience();
-      this.startProceduralWind();
       this.isInitialized = true;
     }
 
@@ -130,8 +125,6 @@ class CinemaAudioEngine {
         this.notifyStateChange();
       };
       this.buildAudioGraph();
-      this.startProceduralAmbience();
-      this.startProceduralWind();
       this.isInitialized = true;
     }
 
@@ -174,24 +167,27 @@ class CinemaAudioEngine {
     if (!ctx) return;
 
     this.masterGain = ctx.createGain();
+    // Transparent cinema mastering limiter (protects headroom without pumping or distortion)
     this.compressor = ctx.createDynamicsCompressor();
-    this.compressor.threshold.value = -7;
-    this.compressor.knee.value = 12;
-    this.compressor.ratio.value = 3.2;
-    this.compressor.attack.value = 0.004;
-    this.compressor.release.value = 0.18;
+    this.compressor.threshold.value = -2.5;
+    this.compressor.knee.value = 18;
+    this.compressor.ratio.value = 2.0;
+    this.compressor.attack.value = 0.008;
+    this.compressor.release.value = 0.22;
 
     this.videoGain = ctx.createGain();
     this.ambienceGain = ctx.createGain();
+    this.ambienceGain.gain.value = 0;
     this.effectsGain = ctx.createGain();
+    this.effectsGain.gain.value = 0;
 
     this.lowShelf = ctx.createBiquadFilter();
     this.lowShelf.type = 'lowshelf';
-    this.lowShelf.frequency.value = 110;
+    this.lowShelf.frequency.value = 95;
 
     this.highShelf = ctx.createBiquadFilter();
     this.highShelf.type = 'highshelf';
-    this.highShelf.frequency.value = 4800;
+    this.highShelf.frequency.value = 5400;
 
     this.inputBus = ctx.createGain();
     this.inputBus.channelCount = 2;
@@ -206,7 +202,7 @@ class CinemaAudioEngine {
     this.stereoDirectGain.gain.value = 0;
 
     this.dolbyBusGain = ctx.createGain();
-    this.dolbyBusGain.gain.value = 1.18;
+    this.dolbyBusGain.gain.value = 0.95;
 
     // Input conditioning chain
     this.lowShelf.connect(this.highShelf);
@@ -217,7 +213,7 @@ class CinemaAudioEngine {
     this.inputBus.connect(this.stereoDirectGain);
     this.stereoDirectGain.connect(this.videoGain);
 
-    // Build 7.1.2 Dolby Cinema Spatial Matrix -> HRTF (desktop) / equalpower (mobile) Panners
+    // Build Clean 7.1.2 Dolby Cinema Spatial Array -> HRTF (desktop) / equalpower (mobile)
     this.splitter = ctx.createChannelSplitter(2);
     this.inputBus.connect(this.splitter);
 
@@ -226,8 +222,8 @@ class CinemaAudioEngine {
       id: SpeakerChannelId,
       pos: [number, number, number],
       dir: [number, number, number],
-      refDist = 12,
-      rolloff = 0.45,
+      refDist = 14,
+      rolloff = 0.4,
     ): PannerNode => {
       const p = ctx.createPanner();
       if (mobile) {
@@ -241,47 +237,47 @@ class CinemaAudioEngine {
       }
       p.distanceModel = 'inverse';
       p.refDistance = refDist;
-      p.maxDistance = 120;
+      p.maxDistance = 140;
       p.rolloffFactor = rolloff;
-      p.coneInnerAngle = 120;
-      p.coneOuterAngle = 235;
-      p.coneOuterGain = 0.55;
+      p.coneInnerAngle = 135;
+      p.coneOuterAngle = 250;
+      p.coneOuterGain = 0.62;
       this.setPannerTransform(p, pos, dir);
       p.connect(this.dolbyBusGain!);
       this.panners.set(id, p);
       return p;
     };
 
-    const panL = createSpatialPanner('L', [-6, 5, -12], [0.25, -0.1, 1], 14, 0.45);
-    const panC = createSpatialPanner('C', [0, 5, -12], [0, -0.1, 1], 14, 0.42);
-    const panR = createSpatialPanner('R', [6, 5, -12], [-0.25, -0.1, 1], 14, 0.45);
-    const panLs = createSpatialPanner('Ls', [-10, 4.5, 0], [1, -0.25, 0], 11, 0.52);
-    const panRs = createSpatialPanner('Rs', [10, 4.5, 0], [-1, -0.25, 0], 11, 0.52);
-    const panLrs = createSpatialPanner('Lrs', [-6, 4.5, 12], [0.35, -0.2, -1], 11, 0.52);
-    const panRrs = createSpatialPanner('Rrs', [6, 4.5, 12], [-0.35, -0.2, -1], 11, 0.52);
-    const panTopL = createSpatialPanner('TopL', [-4.5, 9.5, -1], [0.2, -1, 0], 10, 0.48);
-    const panTopR = createSpatialPanner('TopR', [4.5, 9.5, -1], [-0.2, -1, 0], 10, 0.48);
+    const panL = createSpatialPanner('L', [-6, 5, -12], [0.25, -0.1, 1], 15, 0.38);
+    const panC = createSpatialPanner('C', [0, 5, -12], [0, -0.1, 1], 15, 0.36);
+    const panR = createSpatialPanner('R', [6, 5, -12], [-0.25, -0.1, 1], 15, 0.38);
+    const panLs = createSpatialPanner('Ls', [-10, 4.5, 0], [1, -0.25, 0], 12, 0.45);
+    const panRs = createSpatialPanner('Rs', [10, 4.5, 0], [-1, -0.25, 0], 12, 0.45);
+    const panLrs = createSpatialPanner('Lrs', [-6, 4.5, 12], [0.35, -0.2, -1], 12, 0.45);
+    const panRrs = createSpatialPanner('Rrs', [6, 4.5, 12], [-0.35, -0.2, -1], 12, 0.45);
+    const panTopL = createSpatialPanner('TopL', [-4.5, 9.5, -1], [0.2, -1, 0], 11, 0.42);
+    const panTopR = createSpatialPanner('TopR', [4.5, 9.5, -1], [-0.2, -1, 0], 11, 0.42);
 
-    // 1. Front Screen L / R Direct Screen Feeds
+    // 1. Front Screen L / R Direct Screen Feeds (crisp, clear stereo soundstage)
     const lMainGain = ctx.createGain();
-    lMainGain.gain.value = 0.85;
+    lMainGain.gain.value = 0.82;
     const rMainGain = ctx.createGain();
-    rMainGain.gain.value = 0.85;
+    rMainGain.gain.value = 0.82;
     this.splitter.connect(lMainGain, 0);
     this.splitter.connect(rMainGain, 1);
     lMainGain.connect(panL);
     rMainGain.connect(panR);
 
-    // 2. Center Dialogue Channel (L + R Mid Matrix -> Vocal Presence EQ -> Center Screen Panner)
+    // 2. Center Screen Dialogue Channel (balanced L+R mid -> warm vocal presence -> Center Panner)
     const cMixL = ctx.createGain();
     const cMixR = ctx.createGain();
-    cMixL.gain.value = 0.42;
-    cMixR.gain.value = 0.42;
+    cMixL.gain.value = 0.36;
+    cMixR.gain.value = 0.36;
     const centerPresence = ctx.createBiquadFilter();
     centerPresence.type = 'peaking';
-    centerPresence.frequency.value = 2300;
-    centerPresence.Q.value = 0.9;
-    centerPresence.gain.value = 1.8;
+    centerPresence.frequency.value = 2400;
+    centerPresence.Q.value = 0.75;
+    centerPresence.gain.value = 1.2;
 
     this.splitter.connect(cMixL, 0);
     this.splitter.connect(cMixR, 1);
@@ -289,7 +285,7 @@ class CinemaAudioEngine {
     cMixR.connect(centerPresence);
     centerPresence.connect(panC);
 
-    // 3. Side Surrounds (Ls / Rs) — Decorrelated Mid-Side Difference + Haas Acoustic Delay + Air Absorption
+    // 3. Side & Rear Surrounds — Decorrelated Mid-Side Difference + Clean Acoustic Timing + Warm Air Absorption
     const buildSurroundFeed = (
       primaryCh: 0 | 1,
       oppositeCh: 0 | 1,
@@ -303,37 +299,43 @@ class CinemaAudioEngine {
       const primGain = ctx.createGain();
       const oppGain = ctx.createGain();
       primGain.gain.value = 0.44;
-      oppGain.gain.value = -0.24; // Attenuates centered dialogue in surrounds while blooming stereo SFX/score
+      oppGain.gain.value = -0.36; // Cleanly cancels centered speech from leaking into rear speakers
 
       this.splitter!.connect(primGain, primaryCh);
       this.splitter!.connect(oppGain, oppositeCh);
       primGain.connect(sumNode);
       oppGain.connect(sumNode);
 
-      const delay = ctx.createDelay(0.1);
+      const hp = ctx.createBiquadFilter();
+      hp.type = 'highpass';
+      hp.frequency.value = 180;
+
+      const delay = ctx.createDelay(0.12);
       delay.delayTime.value = delaySec;
+
       const lp = ctx.createBiquadFilter();
       lp.type = 'lowpass';
       lp.frequency.value = cutoffHz;
 
       const sideOutGain = ctx.createGain();
-      sideOutGain.gain.value = 0.85;
-      this.surroundWidthGains.push(sideOutGain);
+      sideOutGain.gain.value = 0.24;
+      this.sideSurroundGains.push(sideOutGain);
 
-      sumNode.connect(delay);
+      sumNode.connect(hp);
+      hp.connect(delay);
       delay.connect(lp);
       lp.connect(sideOutGain);
       sideOutGain.connect(targetPanner);
 
-      // Rear Surround tap
-      const rearDelay = ctx.createDelay(0.1);
+      // Rear Surround wrap
+      const rearDelay = ctx.createDelay(0.12);
       rearDelay.delayTime.value = rearExtraDelaySec;
       const rearLp = ctx.createBiquadFilter();
       rearLp.type = 'lowpass';
-      rearLp.frequency.value = 4300;
+      rearLp.frequency.value = 2800;
       const rearOutGain = ctx.createGain();
-      rearOutGain.gain.value = 0.72;
-      this.surroundWidthGains.push(rearOutGain);
+      rearOutGain.gain.value = 0.16;
+      this.rearSurroundGains.push(rearOutGain);
 
       lp.connect(rearDelay);
       rearDelay.connect(rearLp);
@@ -341,40 +343,44 @@ class CinemaAudioEngine {
       rearOutGain.connect(rearPanner);
     };
 
-    buildSurroundFeed(0, 1, 0.019, 6200, panLs, panLrs, 0.016);
-    buildSurroundFeed(1, 0, 0.022, 6200, panRs, panRrs, 0.019);
+    buildSurroundFeed(0, 1, 0.026, 3800, panLs, panLrs, 0.018);
+    buildSurroundFeed(1, 0, 0.029, 3800, panRs, panRrs, 0.021);
 
-    // 4. Overhead Dolby Atmos Height Channels (TopL / TopR)
+    // 4. Overhead Dolby Atmos Height Channels (Subtle spacious air lift)
     const buildAtmosFeed = (ch: 0 | 1, delaySec: number, targetPanner: PannerNode) => {
       const hp = ctx.createBiquadFilter();
       hp.type = 'highpass';
-      hp.frequency.value = 240;
-      const delay = ctx.createDelay(0.1);
+      hp.frequency.value = 380;
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 5200;
+      const delay = ctx.createDelay(0.12);
       delay.delayTime.value = delaySec;
       const gain = ctx.createGain();
-      gain.gain.value = 0.34;
-      this.surroundWidthGains.push(gain);
+      gain.gain.value = 0.14;
+      this.atmosHeightGains.push(gain);
 
       this.splitter!.connect(hp, ch);
-      hp.connect(delay);
+      hp.connect(lp);
+      lp.connect(delay);
       delay.connect(gain);
       gain.connect(targetPanner);
     };
 
-    buildAtmosFeed(0, 0.024, panTopL);
-    buildAtmosFeed(1, 0.027, panTopR);
+    buildAtmosFeed(0, 0.031, panTopL);
+    buildAtmosFeed(1, 0.034, panTopR);
 
-    // 5. Cinema LFE Subwoofer Bus (Low-passed omnidirectional sub-bass foundation)
+    // 5. Cinema LFE Subwoofer Bus (Deep, tight sub-bass foundation without boom)
     const lfeMixL = ctx.createGain();
     const lfeMixR = ctx.createGain();
     lfeMixL.gain.value = 0.5;
     lfeMixR.gain.value = 0.5;
     const lfeFilter = ctx.createBiquadFilter();
     lfeFilter.type = 'lowpass';
-    lfeFilter.frequency.value = 105;
-    lfeFilter.Q.value = 0.75;
+    lfeFilter.frequency.value = 85;
+    lfeFilter.Q.value = 0.707;
     this.lfeGain = ctx.createGain();
-    this.lfeGain.gain.value = 0.52;
+    this.lfeGain.gain.value = 0.34;
 
     this.splitter.connect(lfeMixL, 0);
     this.splitter.connect(lfeMixR, 1);
@@ -383,21 +389,21 @@ class CinemaAudioEngine {
     lfeFilter.connect(this.lfeGain);
     this.lfeGain.connect(this.dolbyBusGain);
 
-    // 6. Procedural Auditorium Room Impulse Convolver (Spatialized into Surround & Rear Arrays)
+    // 6. Smooth Acoustic Theater Room Impulse Convolver (Velvet damped hall warmth, zero harsh clicks)
     const revInL = ctx.createGain();
     const revInR = ctx.createGain();
     revInL.gain.value = 0.5;
     revInR.gain.value = 0.5;
     const revHp = ctx.createBiquadFilter();
     revHp.type = 'highpass';
-    revHp.frequency.value = 160;
+    revHp.frequency.value = 220;
     const revLp = ctx.createBiquadFilter();
     revLp.type = 'lowpass';
-    revLp.frequency.value = 4600;
+    revLp.frequency.value = 2600;
     this.reverbNode = ctx.createConvolver();
-    this.reverbNode.buffer = this.createCinemaImpulseResponse(0.95);
+    this.reverbNode.buffer = this.createCinemaImpulseResponse(0.85);
     this.reverbWetGain = ctx.createGain();
-    this.reverbWetGain.gain.value = 0.18;
+    this.reverbWetGain.gain.value = 0.075;
 
     this.splitter.connect(revInL, 0);
     this.splitter.connect(revInR, 1);
@@ -411,7 +417,7 @@ class CinemaAudioEngine {
     this.reverbWetGain.connect(panLrs);
     this.reverbWetGain.connect(panRrs);
 
-    // Final Mix & Master Dynamics Limiter
+    // Final Clean Cinema Bus -> Transparent Mastering Limiter -> Destination
     this.dolbyBusGain.connect(this.videoGain);
     this.videoGain.connect(this.compressor);
     this.ambienceGain.connect(this.compressor);
@@ -443,29 +449,30 @@ class CinemaAudioEngine {
     }
   }
 
+  /**
+   * Builds a smooth, acoustically damped cinema hall impulse response with soft 18ms onset
+   * and dual-pole warm absorption (zero delta spikes, metallic slaps, or static fizz).
+   */
   private createCinemaImpulseResponse(decaySeconds: number): AudioBuffer {
     const ctx = this.ctx!;
-    const duration = Math.min(1.6, Math.max(0.55, decaySeconds));
+    const duration = Math.min(1.25, Math.max(0.5, decaySeconds));
     const sampleRate = ctx.sampleRate;
     const length = Math.floor(sampleRate * duration);
     const buffer = ctx.createBuffer(2, length, sampleRate);
 
     for (let ch = 0; ch < 2; ch++) {
       const data = buffer.getChannelData(ch);
-      let lp = 0;
+      let lp1 = 0;
+      let lp2 = 0;
       for (let i = 0; i < length; i++) {
         const t = i / sampleRate;
-        const env = Math.exp(-t / (duration * 0.28));
-        const noise = (Math.random() * 2 - 1) * env * 0.22;
-        lp = lp * 0.65 + noise * 0.35;
-        data[i] = lp;
+        const fadeIn = Math.min(1, t / 0.018);
+        const decayEnv = Math.exp(-t / (duration * 0.24));
+        const raw = (Math.random() * 2 - 1) * fadeIn * decayEnv * 0.14;
+        lp1 = lp1 * 0.72 + raw * 0.28;
+        lp2 = lp2 * 0.65 + lp1 * 0.35;
+        data[i] = lp2;
       }
-      // Subtle early theater wall reflections
-      const taps = [0.015, 0.029, 0.046];
-      taps.forEach((tapSec, idx) => {
-        const sampleIdx = Math.min(length - 1, Math.floor(tapSec * sampleRate));
-        data[sampleIdx] += (ch === 0 ? 0.16 : -0.14) / (idx + 1);
-      });
     }
     return buffer;
   }
@@ -492,63 +499,63 @@ class CinemaAudioEngine {
     const surroundY = Math.min(H - 1.4, Math.max(2.5, topTierY + 2.0));
     const backZ = L / 2;
 
-    const screenRefDist = Math.max(8.0, L * 0.78);
-    const surroundRefDist = Math.max(6.5, Math.min(W, L) * 0.65);
+    const screenRefDist = Math.max(9.0, L * 0.82);
+    const surroundRefDist = Math.max(7.5, Math.min(W, L) * 0.68);
 
     const poses: Record<SpeakerChannelId, SpeakerPose> = {
       L: {
         position: [-screenWidth * 0.36, screenPosition[1], screenPosition[2] + 0.35],
         orientation: [screenWidth * 0.36, sweetSpotY - screenPosition[1], seatingMidZ - screenPosition[2]],
         refDistance: screenRefDist,
-        rolloffFactor: 0.5,
+        rolloffFactor: 0.42,
       },
       C: {
         position: [0, screenPosition[1], screenPosition[2] + 0.35],
         orientation: [0, sweetSpotY - screenPosition[1], seatingMidZ - screenPosition[2]],
         refDistance: screenRefDist,
-        rolloffFactor: 0.48,
+        rolloffFactor: 0.4,
       },
       R: {
         position: [screenWidth * 0.36, screenPosition[1], screenPosition[2] + 0.35],
         orientation: [-screenWidth * 0.36, sweetSpotY - screenPosition[1], seatingMidZ - screenPosition[2]],
         refDistance: screenRefDist,
-        rolloffFactor: 0.5,
+        rolloffFactor: 0.42,
       },
       Ls: {
         position: [-(W / 2 - 0.35), surroundY, seatingMidZ],
         orientation: [W * 0.45, sweetSpotY - surroundY, 0],
         refDistance: surroundRefDist,
-        rolloffFactor: 0.62,
+        rolloffFactor: 0.48,
       },
       Rs: {
         position: [W / 2 - 0.35, surroundY, seatingMidZ],
         orientation: [-W * 0.45, sweetSpotY - surroundY, 0],
         refDistance: surroundRefDist,
-        rolloffFactor: 0.62,
+        rolloffFactor: 0.48,
       },
       Lrs: {
         position: [-Math.min(W * 0.34, Math.max(2.6, W / 2 - 1.4)), surroundY + 0.15, backZ - 0.3],
         orientation: [W * 0.25, sweetSpotY - surroundY, -(backZ - seatingMidZ)],
         refDistance: surroundRefDist,
-        rolloffFactor: 0.62,
+        rolloffFactor: 0.48,
       },
       Rrs: {
         position: [Math.min(W * 0.34, Math.max(2.6, W / 2 - 1.4)), surroundY + 0.15, backZ - 0.3],
         orientation: [-W * 0.25, sweetSpotY - surroundY, -(backZ - seatingMidZ)],
         refDistance: surroundRefDist,
-        rolloffFactor: 0.62,
+        rolloffFactor: 0.48,
       },
       TopL: {
         position: [-W * 0.22, H - 0.35, -L * 0.05],
         orientation: [W * 0.12, -(H - sweetSpotY), 0.1],
-        refDistance: Math.max(4.0, H * 0.72),
-        rolloffFactor: 0.56,
+        refDistance: Math.max(5.0, H * 0.78),
+        rolloffFactor: 0.45,
       },
       TopR: {
         position: [W * 0.22, H - 0.35, -L * 0.05],
         orientation: [-W * 0.12, -(H - sweetSpotY), 0.1],
-        refDistance: Math.max(4.0, H * 0.72),
-        rolloffFactor: 0.56,
+        refDistance: Math.max(5.0, H * 0.78),
+        rolloffFactor: 0.45,
       },
     };
 
@@ -579,8 +586,8 @@ class CinemaAudioEngine {
   };
 
   /**
-   * Updates Web Audio AudioListener position and head orientation cleanly only when pose changes
-   * so rotating the camera 360° shifts the Dolby speaker sound field accurately without thrashing stationary frames.
+   * Smoothly interpolates Web Audio AudioListener position and head orientation only on meaningful
+   * pose change so HRTF panning shifts seamlessly without zipper noise or stationary frame churn.
    */
   public updateListenerPose(
     px: number,
@@ -598,18 +605,19 @@ class CinemaAudioEngine {
 
     const lp = this.lastPose;
     if (
-      Math.abs(px - lp.px) < 1e-4 &&
-      Math.abs(py - lp.py) < 1e-4 &&
-      Math.abs(pz - lp.pz) < 1e-4 &&
-      Math.abs(fx - lp.fx) < 1e-4 &&
-      Math.abs(fy - lp.fy) < 1e-4 &&
-      Math.abs(fz - lp.fz) < 1e-4 &&
-      Math.abs(ux - lp.ux) < 1e-4 &&
-      Math.abs(uy - lp.uy) < 1e-4 &&
-      Math.abs(uz - lp.uz) < 1e-4
+      Math.abs(px - lp.px) < 5e-4 &&
+      Math.abs(py - lp.py) < 5e-4 &&
+      Math.abs(pz - lp.pz) < 5e-4 &&
+      Math.abs(fx - lp.fx) < 5e-4 &&
+      Math.abs(fy - lp.fy) < 5e-4 &&
+      Math.abs(fz - lp.fz) < 5e-4 &&
+      Math.abs(ux - lp.ux) < 5e-4 &&
+      Math.abs(uy - lp.uy) < 5e-4 &&
+      Math.abs(uz - lp.uz) < 5e-4
     ) {
       return;
     }
+    const isFirstSet = Number.isNaN(lp.px);
     lp.px = px;
     lp.py = py;
     lp.pz = pz;
@@ -621,17 +629,29 @@ class CinemaAudioEngine {
     lp.uz = uz;
 
     const listener = ctx.listener;
-
     if (listener.positionX) {
-      listener.positionX.value = px;
-      listener.positionY.value = py;
-      listener.positionZ.value = pz;
-      listener.forwardX.value = fx;
-      listener.forwardY.value = fy;
-      listener.forwardZ.value = fz;
-      listener.upX.value = ux;
-      listener.upY.value = uy;
-      listener.upZ.value = uz;
+      if (isFirstSet) {
+        listener.positionX.value = px;
+        listener.positionY.value = py;
+        listener.positionZ.value = pz;
+        listener.forwardX.value = fx;
+        listener.forwardY.value = fy;
+        listener.forwardZ.value = fz;
+        listener.upX.value = ux;
+        listener.upY.value = uy;
+        listener.upZ.value = uz;
+      } else {
+        const now = ctx.currentTime;
+        listener.positionX.setTargetAtTime(px, now, 0.02);
+        listener.positionY.setTargetAtTime(py, now, 0.02);
+        listener.positionZ.setTargetAtTime(pz, now, 0.02);
+        listener.forwardX.setTargetAtTime(fx, now, 0.02);
+        listener.forwardY.setTargetAtTime(fy, now, 0.02);
+        listener.forwardZ.setTargetAtTime(fz, now, 0.02);
+        listener.upX.setTargetAtTime(ux, now, 0.02);
+        listener.upY.setTargetAtTime(uy, now, 0.02);
+        listener.upZ.setTargetAtTime(uz, now, 0.02);
+      }
     } else if (typeof listener.setPosition === 'function') {
       listener.setPosition(px, py, pz);
       listener.setOrientation(fx, fy, fz, ux, uy, uz);
@@ -657,15 +677,22 @@ class CinemaAudioEngine {
     this.currentProfile = profile;
     if (!this.ctx || !this.lowShelf || !this.highShelf) return;
     const now = this.ctx.currentTime;
-    this.lowShelf.gain.setTargetAtTime(profile.lowShelfGainDb, now, 0.25);
-    this.highShelf.gain.setTargetAtTime(profile.highShelfGainDb, now, 0.25);
+    // Gentle cinema acoustic EQ curve (avoids muddy sub bloat or sibilant hiss)
+    this.lowShelf.gain.setTargetAtTime(Math.min(2.2, profile.lowShelfGainDb * 0.6), now, 0.25);
+    this.highShelf.gain.setTargetAtTime(Math.min(1.0, profile.highShelfGainDb * 0.5), now, 0.25);
 
     const spread = Math.max(0.35, Math.min(1.0, profile.spatialSpread));
-    this.surroundWidthGains.forEach((g) => {
-      g.gain.setTargetAtTime(0.45 + spread * 0.45, now, 0.25);
+    this.sideSurroundGains.forEach((g) => {
+      g.gain.setTargetAtTime(0.16 + spread * 0.14, now, 0.25);
+    });
+    this.rearSurroundGains.forEach((g) => {
+      g.gain.setTargetAtTime(0.11 + spread * 0.1, now, 0.25);
+    });
+    this.atmosHeightGains.forEach((g) => {
+      g.gain.setTargetAtTime(0.1 + spread * 0.08, now, 0.25);
     });
     if (this.reverbWetGain) {
-      this.reverbWetGain.gain.setTargetAtTime(0.08 + spread * 0.14, now, 0.25);
+      this.reverbWetGain.gain.setTargetAtTime(0.04 + spread * 0.055, now, 0.25);
     }
   }
 
@@ -763,28 +790,15 @@ class CinemaAudioEngine {
     // Crossfade cleanly between full 3D Dolby speaker array and direct stereo bypass
     if (this.dolbyBusGain && this.stereoDirectGain) {
       this.lastSpatialEnabled = settings.spatialSimulation;
-      this.dolbyBusGain.gain.setTargetAtTime(settings.spatialSimulation ? 1.18 : 0, now, 0.12);
+      this.dolbyBusGain.gain.setTargetAtTime(settings.spatialSimulation ? 0.95 : 0, now, 0.12);
       this.stereoDirectGain.gain.setTargetAtTime(settings.spatialSimulation ? 0 : 1, now, 0.12);
     }
 
-    // Prioritize uploaded video audio during show
+    // Pure movie soundtrack output (zero artificial pink-noise ambience or wind static)
     const targetVideoGain = showState === 'SHOW_PLAYING' ? settings.videoVolume : 0.02;
     this.videoGain.gain.setTargetAtTime(targetVideoGain, now, 0.18);
-
-    // Subtle auditorium ambience before & after show, very quiet during show
-    const ambienceMultiplier = showState === 'SHOW_PLAYING' ? 0.08 : 0.22;
-    this.ambienceGain.gain.setTargetAtTime(
-      settings.ambienceVolume * ambienceMultiplier,
-      now,
-      0.6,
-    );
-
-    // Optional 4DX wind simulation
-    const targetEffect =
-      windActive && showState === 'SHOW_PLAYING'
-        ? settings.effectsVolume * windIntensity * 0.16
-        : 0;
-    this.effectsGain.gain.setTargetAtTime(targetEffect, now, 0.3);
+    this.ambienceGain.gain.setTargetAtTime(0, now, 0.1);
+    this.effectsGain.gain.setTargetAtTime(0, now, 0.1);
   }
 
   public fadeInVideo(durationSec = 1.0, targetVolume = 1): void {
@@ -807,103 +821,11 @@ class CinemaAudioEngine {
     this.videoGain.gain.linearRampToValueAtTime(0.0001, now + durationSec);
   }
 
-  public modulateWind(speedFactor: number): void {
-    if (!this.ctx || !this.windFilter || !this.windGain) return;
-    const now = this.ctx.currentTime;
-    this.windFilter.frequency.setTargetAtTime(220 + speedFactor * 480, now, 0.25);
-  }
-
-  private createPinkNoiseBuffer(seconds = 4): AudioBuffer | null {
-    if (!this.ctx) return null;
-    const sampleRate = this.ctx.sampleRate;
-    const length = sampleRate * seconds;
-    const buffer = this.ctx.createBuffer(2, length, sampleRate);
-
-    for (let ch = 0; ch < 2; ch++) {
-      const output = buffer.getChannelData(ch);
-      let b0 = 0,
-        b1 = 0,
-        b2 = 0,
-        b3 = 0,
-        b4 = 0,
-        b5 = 0,
-        b6 = 0;
-      for (let i = 0; i < length; i++) {
-        const white = Math.random() * 2 - 1;
-        b0 = 0.99886 * b0 + white * 0.0555179;
-        b1 = 0.99332 * b1 + white * 0.0750759;
-        b2 = 0.969 * b2 + white * 0.153852;
-        b3 = 0.8665 * b3 + white * 0.3104856;
-        b4 = 0.55 * b4 + white * 0.5329522;
-        b5 = -0.7616 * b5 - white * 0.016898;
-        output[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.05;
-        b6 = white * 0.115926;
-      }
-    }
-    return buffer;
-  }
-
-  private startProceduralAmbience(): void {
-    if (!this.ctx || !this.ambienceGain) return;
-    const buffer = this.createPinkNoiseBuffer(4);
-    if (!buffer) return;
-
-    const source = this.ctx.createBufferSource();
-    source.buffer = buffer;
-    source.loop = true;
-
-    const lp = this.ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.value = 340;
-
-    source.connect(lp);
-    lp.connect(this.ambienceGain);
-    source.start();
-    this.ambienceSource = source;
-    this.ambienceGain.gain.value = 0;
-  }
-
-  private startProceduralWind(): void {
-    if (!this.ctx || !this.effectsGain) return;
-    const buffer = this.createPinkNoiseBuffer(3);
-    if (!buffer) return;
-
-    const source = this.ctx.createBufferSource();
-    source.buffer = buffer;
-    source.loop = true;
-
-    const bp = this.ctx.createBiquadFilter();
-    bp.type = 'bandpass';
-    bp.frequency.value = 380;
-    bp.Q.value = 1.6;
-
-    const gain = this.ctx.createGain();
-    gain.gain.value = 1;
-
-    source.connect(bp);
-    bp.connect(gain);
-    gain.connect(this.effectsGain);
-    source.start();
-
-    this.windSource = source;
-    this.windFilter = bp;
-    this.windGain = gain;
-    this.effectsGain.gain.value = 0;
+  public modulateWind(_speedFactor: number): void {
+    // Wind pink-noise modulation removed to keep cinema playback completely disturbance-free
   }
 
   public dispose(): void {
-    try {
-      this.ambienceSource?.stop();
-      this.ambienceSource?.disconnect();
-    } catch {
-      // Ignore
-    }
-    try {
-      this.windSource?.stop();
-      this.windSource?.disconnect();
-    } catch {
-      // Ignore
-    }
     this.videoSources.forEach((src) => {
       try {
         src.disconnect();
@@ -914,7 +836,9 @@ class CinemaAudioEngine {
     this.videoSources.clear();
     this.pendingVideos.clear();
     this.panners.clear();
-    this.surroundWidthGains = [];
+    this.sideSurroundGains = [];
+    this.rearSurroundGains = [];
+    this.atmosHeightGains = [];
     if (this.ctx) {
       this.ctx.onstatechange = null;
       this.ctx.close().catch(() => {});
@@ -936,8 +860,6 @@ class CinemaAudioEngine {
     this.reverbNode = null;
     this.reverbWetGain = null;
     this.lfeGain = null;
-    this.ambienceSource = null;
-    this.windSource = null;
     this.currentProfile = null;
     this.currentConfig = null;
     this.lastMixState = null;

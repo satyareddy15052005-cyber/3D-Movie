@@ -120,24 +120,6 @@ export const SettingsModal: React.FC = () => {
                 className="w-full accent-[#D4AF37]"
               />
 
-              <label className="flex items-center justify-between text-xs text-neutral-300">
-                <span>Auditorium Ambience</span>
-                <span className="font-mono-tabular text-neutral-400">
-                  {Math.round(audioSettings.ambienceVolume * 100)}%
-                </span>
-              </label>
-              <input
-                type="range"
-                min={0}
-                max={1}
-                step={0.05}
-                value={audioSettings.ambienceVolume}
-                onChange={(e) =>
-                  updateAudioSettings({ ambienceVolume: parseFloat(e.target.value) })
-                }
-                className="w-full accent-[#D4AF37]"
-              />
-
               <label className="flex items-center justify-between pt-1 text-xs text-neutral-300 cursor-pointer">
                 <span>3D Spatial Audio</span>
                 <input

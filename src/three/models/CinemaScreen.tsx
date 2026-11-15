@@ -26,6 +26,7 @@ interface CinemaScreenProps {
   screenFraming: ScreenFramingMode;
   showState: ShowState;
   isPaused?: boolean;
+  isFullscreen?: boolean;
   isSoftwareGl?: boolean;
   screenBrightnessRef: React.MutableRefObject<number>;
   screenBounceRef?: React.MutableRefObject<ScreenBounceSample>;
@@ -188,6 +189,7 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
   screenFraming,
   showState,
   isPaused = false,
+  isFullscreen = false,
   isSoftwareGl = false,
   screenBrightnessRef,
   screenBounceRef,
@@ -641,7 +643,7 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
 
           vec2 centered = vUv - 0.5;
           float radial = dot(centered, centered);
-          float projectorFalloff = 1.0 - radial * 0.08;
+          float projectorFalloff = 1.0 - radial * 0.025;
 
           vec3 finalCol = linearRgb * uBrightness * projectorFalloff;
           gl_FragColor = vec4(finalCol, 1.0);
@@ -669,8 +671,8 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
           ? 0.62
           : showState === 'SHOW_PLAYING'
             ? isPaused
-              ? 0.78
-              : 0.96
+              ? 0.84
+              : 1.0
             : 0.12;
 
     screenBrightnessRef.current = THREE.MathUtils.damp(
@@ -744,10 +746,12 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
       }
     }
 
-    // Pace 32x18 GPU screen light sampling cleanly (~24Hz) during active playback and skip when paused/static
+    // Pace 32x18 GPU screen light sampling cleanly (~15Hz in fullscreen / ~24Hz windowed) during active playback
+    const samplerIntervalMs = isFullscreen || isSoftwareGl ? 66 : 42;
     const samplerDue =
-      activeTex !== lastSamplerTexRef.current ||
-      (isVideo && !isPaused && nowMs - lastSamplerMsRef.current >= 42);
+      screenReflectionBrightness > 0.01 &&
+      (activeTex !== lastSamplerTexRef.current ||
+        (isVideo && !isPaused && nowMs - lastSamplerMsRef.current >= samplerIntervalMs));
     if (samplerDue) {
       lastSamplerTexRef.current = activeTex;
       lastSamplerMsRef.current = nowMs;

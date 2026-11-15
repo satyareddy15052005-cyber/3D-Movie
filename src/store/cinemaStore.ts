@@ -72,8 +72,8 @@ const savedPrefs = loadSavedPreferences();
 const DEFAULT_AUDIO: AudioSettings = {
   masterVolume: 0.85,
   videoVolume: 1.0,
-  ambienceVolume: 0.45,
-  effectsVolume: 0.55,
+  ambienceVolume: 0,
+  effectsVolume: 0,
   spatialSimulation: true,
   ...savedPrefs.audioSettings,
   muted: false,
@@ -192,7 +192,7 @@ export const useCinemaStore = create<CinemaStoreState>((set, get) => ({
           enabled: true,
           vibrationIntensity: Math.max(0.65, get().fourDxSettings.vibrationIntensity),
           cameraMotionIntensity: Math.max(0.55, get().fourDxSettings.cameraMotionIntensity),
-          windAudioEnabled: true,
+          windAudioEnabled: false,
           atmosphericLightEnabled: true,
         }
       : get().fourDxSettings;

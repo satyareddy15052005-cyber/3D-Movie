@@ -23,6 +23,7 @@ import { useCinemaStore } from '../../store/cinemaStore';
 import { CinemaAuditoriumCanvas } from '../../three/scenes/CinemaAuditoriumCanvas';
 import { cinemaAudioEngine } from '../../services/audio/cinemaAudioEngine';
 import { formatDuration, isMobileDevice } from '../../utils/formatters';
+import { screenWakeLock } from '../../utils/wakeLock';
 import { CameraViewMode } from '../../types/cinema';
 
 export const VirtualCinemaPage: React.FC = () => {
@@ -119,6 +120,11 @@ export const VirtualCinemaPage: React.FC = () => {
   const silenceStreakRef = useRef(0);
   const lastProgressedTimeRef = useRef(-1);
   const frozenTicksRef = useRef(0);
+  const lastUiTimeRef = useRef(-1);
+
+  const showNativeFullVideo =
+    viewMode === 'screen_full' &&
+    (showState === 'SHOW_PLAYING' || showState === 'SHOW_COMPLETED');
 
   const createDeckElement = useCallback((host: HTMLElement) => {
     const vid = document.createElement('video');
@@ -274,8 +280,59 @@ export const VirtualCinemaPage: React.FC = () => {
       } catch {
         // Ignore audio disposal error
       }
+      screenWakeLock.setActive(false);
     };
   }, []);
+
+  // Keep mobile and laptop displays awake while watching movies
+  useEffect(() => {
+    const keepDisplayAwake =
+      showState === 'SHOW_STARTING' || (showState === 'SHOW_PLAYING' && !isPaused);
+    screenWakeLock.setActive(keepDisplayAwake);
+    return () => {
+      if (!keepDisplayAwake) {
+        screenWakeLock.setActive(false);
+      }
+    };
+  }, [showState, isPaused]);
+
+  // Style active vs standby <video> deck so Full Screen plays 1:1 native hardware video without WebGL overhead
+  useEffect(() => {
+    const vidA = deckARef.current;
+    const vidB = deckBRef.current;
+    const activeEl = activeDeck === 'A' ? vidA : vidB;
+    const standbyEl = activeDeck === 'A' ? vidB : vidA;
+
+    if (activeEl) {
+      if (showNativeFullVideo) {
+        activeEl.style.display = 'block';
+        activeEl.style.position = 'static';
+        activeEl.style.width = '100%';
+        activeEl.style.height = '100%';
+        activeEl.style.objectFit = 'contain';
+        activeEl.style.opacity = '1';
+      } else {
+        activeEl.style.display = 'block';
+        activeEl.style.position = 'absolute';
+        activeEl.style.top = '0';
+        activeEl.style.left = '0';
+        activeEl.style.width = '32px';
+        activeEl.style.height = '18px';
+        activeEl.style.objectFit = 'contain';
+        activeEl.style.opacity = '1';
+      }
+    }
+
+    if (standbyEl) {
+      standbyEl.style.display = showNativeFullVideo ? 'none' : 'block';
+      standbyEl.style.position = 'absolute';
+      standbyEl.style.top = '0';
+      standbyEl.style.left = '0';
+      standbyEl.style.width = '1px';
+      standbyEl.style.height = '1px';
+      standbyEl.style.opacity = '0';
+    }
+  }, [activeDeck, deckAEl, deckBEl, showNativeFullVideo]);
 
   // Preload current item on active deck & next playlist item metadata on standby deck
   useEffect(() => {
@@ -609,17 +666,12 @@ export const VirtualCinemaPage: React.FC = () => {
     const onTimeUpdate = () => {
       const t = vid.currentTime || 0;
       const d = Number.isFinite(vid.duration) ? vid.duration : 0;
-      setCurrentTime(t);
+      if (Math.abs(t - lastUiTimeRef.current) >= 0.2 || t === 0) {
+        lastUiTimeRef.current = t;
+        setCurrentTime(t);
+      }
       if (d > 0) {
         setDuration((prev) => (Math.abs(prev - d) > 0.25 ? d : prev));
-      }
-
-      if (
-        selectedTheaterConfig?.supports4dxEffects &&
-        fourDxSettings.enabled &&
-        fourDxSettings.windAudioEnabled
-      ) {
-        cinemaAudioEngine.modulateWind((Math.sin(t * 0.8) + 1) * 0.5);
       }
 
       // Near-end guard for codecs that stall slightly before dispatching 'ended'
@@ -1071,11 +1123,15 @@ export const VirtualCinemaPage: React.FC = () => {
       onTouchStart={bumpHudActivity}
       className="relative h-screen w-screen overflow-hidden bg-[#040406] text-[#F4F1EA] select-none"
     >
-      {/* Hardware-decode video host kept actively composited inside fullscreen container so Fullscreen never throttles playback */}
+      {/* Hardware-decode video host: minimal compositor anchor in 3D modes, native 1:1 full-bleed player in Full Screen */}
       <div
         ref={videoHostRef}
-        aria-hidden="true"
-        className="pointer-events-none absolute bottom-0 left-0 z-[1] h-[18px] w-[32px] overflow-hidden opacity-[0.015]"
+        aria-hidden={!showNativeFullVideo}
+        className={
+          showNativeFullVideo
+            ? 'pointer-events-none absolute inset-0 z-[5] flex items-center justify-center bg-[#030305]'
+            : 'pointer-events-none absolute bottom-0 left-0 z-[1] h-[18px] w-[32px] overflow-hidden opacity-[0.005]'
+        }
       />
 
       {/* 3D Auditorium Canvas */}
@@ -1422,25 +1478,6 @@ export const VirtualCinemaPage: React.FC = () => {
                   className="w-full touch-none accent-[#D4AF37]"
                 />
               </div>
-              <div>
-                <div className="flex justify-between text-neutral-300 mb-1">
-                  <span>Theater Ambience</span>
-                  <span className="font-mono-tabular">
-                    {Math.round(audioSettings.ambienceVolume * 100)}%
-                  </span>
-                </div>
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  value={audioSettings.ambienceVolume}
-                  onChange={(e) =>
-                    updateAudioSettings({ ambienceVolume: parseFloat(e.target.value) })
-                  }
-                  className="w-full accent-[#D4AF37]"
-                />
-              </div>
               <div className="border-t border-white/10 pt-2.5">
                 <div className="flex justify-between text-neutral-300 mb-1">
                   <span>Screen Light Reflection</span>
@@ -1472,27 +1509,6 @@ export const VirtualCinemaPage: React.FC = () => {
                   className="h-4 w-4 accent-[#D4AF37]"
                 />
               </label>
-              {selectedTheaterConfig.supports4dxEffects && (
-                <div>
-                  <div className="flex justify-between text-neutral-300 mb-1">
-                    <span>4DX Wind Effects</span>
-                    <span className="font-mono-tabular">
-                      {Math.round(audioSettings.effectsVolume * 100)}%
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    min={0}
-                    max={1}
-                    step={0.05}
-                    value={audioSettings.effectsVolume}
-                    onChange={(e) =>
-                      updateAudioSettings({ effectsVolume: parseFloat(e.target.value) })
-                    }
-                    className="w-full accent-[#D4AF37]"
-                  />
-                </div>
-              )}
             </div>
           )}
 
@@ -1560,18 +1576,6 @@ export const VirtualCinemaPage: React.FC = () => {
                   className="w-full accent-[#D4AF37]"
                 />
               </div>
-              <label className="flex items-center justify-between cursor-pointer">
-                <span className="text-neutral-300">Air Jets & Wind Audio</span>
-                <input
-                  type="checkbox"
-                  disabled={!fourDxSettings.enabled}
-                  checked={fourDxSettings.windAudioEnabled}
-                  onChange={(e) =>
-                    updateFourDxSettings({ windAudioEnabled: e.target.checked })
-                  }
-                  className="h-4 w-4 accent-[#D4AF37]"
-                />
-              </label>
               <label className="flex items-center justify-between cursor-pointer">
                 <span className="text-neutral-300">Lightning & Strobe Pulses</span>
                 <input

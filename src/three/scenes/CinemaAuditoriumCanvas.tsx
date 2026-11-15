@@ -169,6 +169,9 @@ export const CinemaAuditoriumCanvas: React.FC<CinemaAuditoriumCanvasProps> = Rea
 
   const isPlaying = showState === 'SHOW_PLAYING';
   const isActivelyPlaying = isPlaying && !isPaused;
+  const pauseThreeForNativeFull =
+    viewMode === 'screen_full' &&
+    (showState === 'SHOW_PLAYING' || showState === 'SHOW_COMPLETED');
   const active4dxVibration =
     config.supports4dxEffects && fourDxSettings.enabled && isActivelyPlaying
       ? fourDxSettings.vibrationIntensity
@@ -190,6 +193,7 @@ export const CinemaAuditoriumCanvas: React.FC<CinemaAuditoriumCanvasProps> = Rea
       )}
 
       <Canvas
+        frameloop={pauseThreeForNativeFull ? 'demand' : 'always'}
         shadows={!webglInfo.isSoftwareGl && graphicsQuality === 'high' && !isMobile && !isFullscreen}
         dpr={dpr}
         gl={{
@@ -255,6 +259,7 @@ export const CinemaAuditoriumCanvas: React.FC<CinemaAuditoriumCanvasProps> = Rea
           screenFraming={screenFraming}
           showState={showState}
           isPaused={isPaused}
+          isFullscreen={isFullscreen}
           isSoftwareGl={webglInfo.isSoftwareGl || graphicsQuality === 'low'}
           screenBrightnessRef={screenBrightnessRef}
           screenBounceRef={screenBounceRef}
