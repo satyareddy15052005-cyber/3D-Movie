@@ -195,7 +195,10 @@ export const useCinemaStore = create<CinemaStoreState>((set, get) => ({
           windAudioEnabled: false,
           atmosphericLightEnabled: true,
         }
-      : get().fourDxSettings;
+      : {
+          ...get().fourDxSettings,
+          enabled: false,
+        };
 
     set({
       selectedTheaterId: theaterId,

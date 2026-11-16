@@ -96,35 +96,37 @@ export const CinemaLightingRig: React.FC<CinemaLightingRigProps> = ({
       }
     }
 
-    const flashLevel = fourDxFlashRef?.current.level ?? 0;
+    const flashLevel = config.supports4dxEffects ? (fourDxFlashRef?.current.level ?? 0) : 0;
     const flashColor = fourDxFlashRef?.current.color ?? '#7dd3fc';
 
     const bounce = screenBounceRef?.current ?? { r: 0.72, g: 0.8, b: 0.95, luminance: 0.25 };
+    // Compensate inverse-square light falloff across 6m Private salons vs 18m IMAX mega-domes
+    const roomScale = Math.pow(Math.max(0.62, auditoriumHeight / 10.6), 1.4);
 
     if (ambientRef.current) {
-      const swBoost = isSoftwareGl ? 1.45 : 1.1;
+      const swBoost = isSoftwareGl ? 1.35 : 1.08;
       ambientRef.current.intensity = 0.003 + f * lightingProfile.ambientOpenIntensity * swBoost;
     }
     if (mainCeilingRef.current) {
-      const mainBoost = isSoftwareGl ? 1.55 : 1.15;
+      const mainBoost = isSoftwareGl ? 1.45 : 1.15;
       mainCeilingRef.current.intensity = f * lightingProfile.mainOpenIntensity * mainBoost;
     }
     if (rearFillRef.current) {
-      rearFillRef.current.intensity = f * lightingProfile.mainOpenIntensity * 42;
+      rearFillRef.current.intensity = f * lightingProfile.mainOpenIntensity * 38 * roomScale;
     }
     if (midCeilingRef.current) {
-      midCeilingRef.current.intensity = f * lightingProfile.mainOpenIntensity * 48;
+      midCeilingRef.current.intensity = f * lightingProfile.mainOpenIntensity * 44 * roomScale;
     }
     if (wallLeftRef.current) {
       wallLeftRef.current.intensity =
-        f * lightingProfile.wallOpenIntensity * 28 + flashLevel * 18;
+        f * lightingProfile.wallOpenIntensity * 24 * roomScale + flashLevel * 18;
       wallLeftRef.current.color.set(
         flashLevel > 0.05 ? flashColor : lightingProfile.wallColor,
       );
     }
     if (wallRightRef.current) {
       wallRightRef.current.intensity =
-        f * lightingProfile.wallOpenIntensity * 28 + flashLevel * 18;
+        f * lightingProfile.wallOpenIntensity * 24 * roomScale + flashLevel * 18;
       wallRightRef.current.color.set(
         flashLevel > 0.05 ? flashColor : lightingProfile.wallColor,
       );
@@ -186,30 +188,30 @@ export const CinemaLightingRig: React.FC<CinemaLightingRigProps> = ({
         shadow-camera-far={auditoriumHeight + 14}
       />
 
-      {/* Mid & Rear Auditorium Ceiling Lights + Wall Sconce Lights */}
+      {/* Mid & Rear Auditorium Ceiling Lights (active across all quality tiers for balanced room depth) */}
+      <pointLight
+        ref={midCeilingRef}
+        position={[0, auditoriumHeight - 1.0, -1.5]}
+        color={lightingProfile.ceilingColor}
+        intensity={44}
+        distance={auditoriumLength * 1.15}
+        decay={1.8}
+      />
+      <pointLight
+        ref={rearFillRef}
+        position={[0, auditoriumHeight - 1.0, auditoriumLength * 0.25]}
+        color={lightingProfile.ceilingColor}
+        intensity={38}
+        distance={auditoriumLength * 1.15}
+        decay={1.8}
+      />
       {!isSoftwareGl && (
         <>
-          <pointLight
-            ref={midCeilingRef}
-            position={[0, auditoriumHeight - 1.0, -1.5]}
-            color={lightingProfile.ceilingColor}
-            intensity={45}
-            distance={auditoriumLength * 1.1}
-            decay={1.8}
-          />
-          <pointLight
-            ref={rearFillRef}
-            position={[0, auditoriumHeight - 1.0, auditoriumLength * 0.25]}
-            color={lightingProfile.ceilingColor}
-            intensity={40}
-            distance={auditoriumLength * 1.1}
-            decay={1.8}
-          />
           <pointLight
             ref={wallLeftRef}
             position={[-auditoriumWidth / 2 + 1.4, auditoriumHeight * 0.5, 0]}
             color={lightingProfile.wallColor}
-            intensity={28}
+            intensity={24}
             distance={auditoriumWidth * 1.2}
             decay={1.8}
           />
@@ -217,7 +219,7 @@ export const CinemaLightingRig: React.FC<CinemaLightingRigProps> = ({
             ref={wallRightRef}
             position={[auditoriumWidth / 2 - 1.4, auditoriumHeight * 0.5, 0]}
             color={lightingProfile.wallColor}
-            intensity={28}
+            intensity={24}
             distance={auditoriumWidth * 1.2}
             decay={1.8}
           />

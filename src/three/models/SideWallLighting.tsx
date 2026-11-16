@@ -18,11 +18,12 @@ interface DiagonalSegmentProps {
   depth: number;
   material: THREE.Material;
   housingMaterial?: THREE.Material;
+  interiorFocusY?: number;
 }
 
 /**
  * Renders an exact architectural linear LED channel bar from 3D point A to point B
- * with optional recessed dark anodized aluminum backing profile.
+ * with its recessed anodized aluminum housing sitting behind the interior-facing diffuser.
  */
 const ArchitecturalChannelBar: React.FC<DiagonalSegmentProps> = ({
   start,
@@ -31,6 +32,7 @@ const ArchitecturalChannelBar: React.FC<DiagonalSegmentProps> = ({
   depth,
   material,
   housingMaterial,
+  interiorFocusY = 3.5,
 }) => {
   const { mid, length, quaternion } = useMemo(() => {
     const a = new THREE.Vector3(...start);
@@ -38,22 +40,35 @@ const ArchitecturalChannelBar: React.FC<DiagonalSegmentProps> = ({
     const dir = new THREE.Vector3().subVectors(b, a);
     const len = dir.length();
     const m = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5);
-    const q = new THREE.Quaternion().setFromUnitVectors(
-      new THREE.Vector3(0, 1, 0),
-      len > 1e-4 ? dir.clone().normalize() : new THREE.Vector3(0, 1, 0),
-    );
+    const yAxis = len > 1e-4 ? dir.clone().normalize() : new THREE.Vector3(0, 1, 0);
+
+    // Compute vector pointing cleanly into the auditorium interior orthogonal to yAxis
+    const toInterior = new THREE.Vector3(0, interiorFocusY, m.z).sub(m);
+    toInterior.sub(yAxis.clone().multiplyScalar(toInterior.dot(yAxis)));
+    if (toInterior.lengthSq() < 1e-5) {
+      toInterior.set(0, 1, 0).sub(yAxis.clone().multiplyScalar(yAxis.y));
+    }
+    if (toInterior.lengthSq() < 1e-5) {
+      toInterior.set(1, 0, 0);
+    }
+    const xAxis = toInterior.normalize();
+    const zAxis = new THREE.Vector3().crossVectors(xAxis, yAxis).normalize();
+    xAxis.crossVectors(yAxis, zAxis).normalize();
+
+    const basis = new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis);
+    const q = new THREE.Quaternion().setFromRotationMatrix(basis);
     return { mid: m, length: Math.max(0.05, len), quaternion: q };
-  }, [start, end]);
+  }, [start, end, interiorFocusY]);
 
   return (
     <group position={[mid.x, mid.y, mid.z]} quaternion={quaternion}>
       {housingMaterial && (
-        <mesh material={housingMaterial}>
-          <boxGeometry args={[depth * 1.45, length + thickness * 0.6, thickness * 1.9]} />
+        <mesh position={[-depth * 0.22, 0, 0]} material={housingMaterial}>
+          <boxGeometry args={[depth * 0.9, length + thickness * 0.4, thickness * 1.65]} />
         </mesh>
       )}
-      <mesh material={material}>
-        <boxGeometry args={[depth, length, thickness]} />
+      <mesh position={[depth * 0.35, 0, 0]} material={material}>
+        <boxGeometry args={[depth * 0.85, length + 0.01, thickness]} />
       </mesh>
     </group>
   );
@@ -71,6 +86,10 @@ export const SideWallLighting: React.FC<SideWallLightingProps> = ({
     auditoriumWidth: W,
     auditoriumLength: L,
     auditoriumHeight: H,
+    firstRowZ,
+    rowSpacing,
+    rowElevationStep,
+    seatingRows,
     sideLightStyle,
     lightingProfile,
     environmentProfile,
@@ -145,36 +164,44 @@ export const SideWallLighting: React.FC<SideWallLightingProps> = ({
   // Continuous crisscross geometric LED lattice coordinates inspired by architectural cinema halls
   const crisscrossSegments = useMemo(() => {
     if (sideLightStyle !== 'crisscross_geometric') return [];
-    const wx = W / 2 - 0.245;
-    const ceilY = H - 0.225;
-    const floorY = 0.04;
+    const wx = W / 2 - 0.26;
+    const ceilY = H - 0.235;
+    const frontFloorY = 0.04;
+    const tierEdgeZ = firstRowZ - rowSpacing * 0.5;
+    const skirtYAt = (z: number) => {
+      if (z <= tierEdgeZ) return frontFloorY;
+      const tierFrac = Math.min(seatingRows - 1, Math.max(0, (z - tierEdgeZ) / rowSpacing));
+      return Math.min(topTierY, tierFrac * rowElevationStep) + 0.08;
+    };
+
     const zFront = -L * 0.42;
-    const zMid1 = -L * 0.16;
-    const zMid2 = L * 0.12;
-    const zBack = L * 0.4;
+    const zMid1 = -L * 0.15;
+    const zMid2 = L * 0.14;
+    const zBack = L * 0.41;
 
     const segs: { start: [number, number, number]; end: [number, number, number]; accent?: boolean }[] = [];
 
     [-1, 1].forEach((side) => {
       const sx = side * wx;
       const ceilInX = side * (W * 0.16);
-      const floorInX = side * (W * 0.36);
+      const floorInX = side * (W * 0.34);
 
-      // Floor perimeter architectural channels
-      segs.push({ start: [sx, floorY, zFront], end: [sx, floorY, zBack] });
-      segs.push({ start: [floorInX, floorY, zFront], end: [floorInX, floorY, zBack], accent: true });
-      segs.push({ start: [sx, floorY, zFront], end: [floorInX, floorY, zFront + 1.8] });
-      segs.push({ start: [sx, floorY, zBack], end: [floorInX, floorY, zBack - 1.4] });
+      // Front flat apron + sloped skirting perimeter channels tracking cleanly above seating risers
+      segs.push({ start: [sx, frontFloorY, zFront], end: [sx, frontFloorY, tierEdgeZ] });
+      segs.push({ start: [sx, frontFloorY, tierEdgeZ], end: [sx, skirtYAt(zBack), zBack] });
+      segs.push({ start: [floorInX, frontFloorY, zFront], end: [floorInX, frontFloorY, tierEdgeZ], accent: true });
+      segs.push({ start: [sx, frontFloorY, zFront], end: [floorInX, frontFloorY, zFront + 1.4] });
+      segs.push({ start: [sx, frontFloorY, tierEdgeZ], end: [floorInX, frontFloorY, tierEdgeZ] });
 
-      // Bold crisscrossing wall-to-ceiling diagonal channels across acoustic matte walls
-      segs.push({ start: [sx, floorY, zBack], end: [sx, ceilY, zMid2] });
-      segs.push({ start: [sx, floorY, zMid2 - 0.4], end: [sx, ceilY, zBack - 0.6] });
+      // Bold crisscrossing wall-to-ceiling diagonal channels starting cleanly above skirting tiers
+      segs.push({ start: [sx, skirtYAt(zBack), zBack], end: [sx, ceilY, zMid2] });
+      segs.push({ start: [sx, skirtYAt(zMid2 - 0.4), zMid2 - 0.4], end: [sx, ceilY, zBack - 0.6] });
 
-      segs.push({ start: [sx, floorY, zMid2 + 1.1], end: [sx, ceilY, zMid1 - 0.6] });
-      segs.push({ start: [sx, floorY, zMid1 - 1.2], end: [sx, ceilY, zMid2 + 0.5] });
+      segs.push({ start: [sx, skirtYAt(zMid2 + 1.1), zMid2 + 1.1], end: [sx, ceilY, zMid1 - 0.6] });
+      segs.push({ start: [sx, skirtYAt(zMid1 - 1.2), zMid1 - 1.2], end: [sx, ceilY, zMid2 + 0.5] });
 
-      segs.push({ start: [sx, floorY, zMid1 + 0.4], end: [sx, ceilY, zFront + 0.9] });
-      segs.push({ start: [sx, floorY, zFront], end: [sx, ceilY, zMid1 + 0.2] });
+      segs.push({ start: [sx, skirtYAt(zMid1 + 0.4), zMid1 + 0.4], end: [sx, ceilY, zFront + 0.9] });
+      segs.push({ start: [sx, skirtYAt(zFront), zFront], end: [sx, ceilY, zMid1 + 0.2] });
 
       // Ceiling continuation lines tying left & right wall diagonals across the dark ceiling plane
       segs.push({ start: [sx, ceilY, zBack - 0.6], end: [ceilInX, ceilY, zMid1], accent: true });
@@ -187,7 +214,7 @@ export const SideWallLighting: React.FC<SideWallLightingProps> = ({
     segs.push({ start: [wx, ceilY, zFront + 0.9], end: [-wx, ceilY, zMid1 - 1.4] });
 
     return segs;
-  }, [sideLightStyle, W, L, H]);
+  }, [sideLightStyle, W, L, H, firstRowZ, rowSpacing, rowElevationStep, seatingRows, topTierY]);
 
   return (
     <group>
@@ -253,6 +280,18 @@ export const SideWallLighting: React.FC<SideWallLightingProps> = ({
               </mesh>
             )),
           )}
+          {wallBayZs.slice(1, -1).map((bz, idx) =>
+            [-1, 1].map((side) => (
+              <group key={`crisscross-grille-${idx}-${side}`} position={[side * (W / 2 - 0.22), H * 0.72, bz]}>
+                <mesh material={mats.channelMetalMat}>
+                  <boxGeometry args={[0.04, 0.72, 0.72]} />
+                </mesh>
+                <mesh position={[-side * 0.022, 0, 0]} material={acousticPanelMat}>
+                  <boxGeometry args={[0.02, 0.56, 0.56]} />
+                </mesh>
+              </group>
+            )),
+          )}
           {crisscrossSegments.map((seg, i) => (
             <ArchitecturalChannelBar
               key={`crisscross-${i}`}
@@ -262,6 +301,7 @@ export const SideWallLighting: React.FC<SideWallLightingProps> = ({
               depth={0.042}
               material={seg.accent ? mats.secondaryEmitterMat : mats.primaryEmitterMat}
               housingMaterial={mats.channelMetalMat}
+              interiorFocusY={H * 0.45}
             />
           ))}
         </group>
@@ -327,17 +367,17 @@ export const SideWallLighting: React.FC<SideWallLightingProps> = ({
                       <boxGeometry args={[0.05, H * 0.5, 0.2]} />
                     </mesh>
                     {/* Three Tiered Indirect Side-Light Diffuser Channels */}
-                    <mesh position={[inDir * 0.025, 0, 0.21]} material={mats.primaryEmitterMat}>
-                      <boxGeometry args={[0.03, H * 0.7, 0.035]} />
+                    <mesh position={[inDir * 0.052, 0, 0.22]} material={mats.primaryEmitterMat}>
+                      <boxGeometry args={[0.032, H * 0.7, 0.038]} />
                     </mesh>
-                    <mesh position={[inDir * 0.025, 0, -0.21]} material={mats.primaryEmitterMat}>
-                      <boxGeometry args={[0.03, H * 0.7, 0.035]} />
+                    <mesh position={[inDir * 0.052, 0, -0.22]} material={mats.primaryEmitterMat}>
+                      <boxGeometry args={[0.032, H * 0.7, 0.038]} />
                     </mesh>
-                    <mesh position={[inDir * 0.065, 0, 0.13]} material={mats.secondaryEmitterMat}>
-                      <boxGeometry args={[0.025, H * 0.58, 0.03]} />
+                    <mesh position={[inDir * 0.09, 0, 0.14]} material={mats.secondaryEmitterMat}>
+                      <boxGeometry args={[0.03, H * 0.58, 0.034]} />
                     </mesh>
-                    <mesh position={[inDir * 0.065, 0, -0.13]} material={mats.secondaryEmitterMat}>
-                      <boxGeometry args={[0.025, H * 0.58, 0.03]} />
+                    <mesh position={[inDir * 0.09, 0, -0.14]} material={mats.secondaryEmitterMat}>
+                      <boxGeometry args={[0.03, H * 0.58, 0.034]} />
                     </mesh>
                     {/* Crown Sunburst Finials */}
                     <mesh position={[inDir * 0.05, H * 0.34, 0]} material={mats.brassHardwareMat}>
@@ -355,12 +395,12 @@ export const SideWallLighting: React.FC<SideWallLightingProps> = ({
                     </mesh>
                     {/* Twin Slotted Recessed Knife-Edge Diffuser Reveals */}
                     {[-0.18, 0.18].map((tz, ti) => (
-                      <group key={`slot-${ti}`} position={[inDir * 0.06, 0, tz]}>
+                      <group key={`slot-${ti}`} position={[inDir * 0.072, 0, tz]}>
                         <mesh material={mats.primaryEmitterMat}>
-                          <boxGeometry args={[0.04, H * 0.76, 0.06]} />
+                          <boxGeometry args={[0.048, H * 0.76, 0.065]} />
                         </mesh>
-                        <mesh position={[inDir * 0.035, 0, 0]} material={trimMetalMat}>
-                          <boxGeometry args={[0.03, H * 0.78, 0.03]} />
+                        <mesh position={[inDir * 0.032, 0, 0]} material={trimMetalMat}>
+                          <boxGeometry args={[0.028, H * 0.78, 0.028]} />
                         </mesh>
                       </group>
                     ))}
@@ -375,44 +415,34 @@ export const SideWallLighting: React.FC<SideWallLightingProps> = ({
 
                 {/* 5. IMAX Aurora — IMAX Polar Aurora: Cantilevered Sculpted Wave-Rib Arch */}
                 {sideLightStyle === 'aurora_ribbon_waves' && (
-                  <group position={[0, 0, bz]}>
-                    {/* Lower Vertical Rib Segment */}
-                    <mesh position={[side * (W / 2 - 0.31), H * 0.27, 0]} material={mats.channelMetalMat}>
-                      <boxGeometry args={[0.16, H * 0.44, 0.28]} />
-                    </mesh>
-                    <mesh position={[side * (W / 2 - 0.4), H * 0.27, 0]} material={mats.primaryEmitterMat}>
-                      <boxGeometry args={[0.045, H * 0.4, 0.09]} />
-                    </mesh>
-                    {/* Mid Cantilevered Angled Facet */}
-                    <mesh
-                      position={[side * (W / 2 - 0.56), H * 0.61, 0]}
-                      rotation={[0, 0, side * 0.36]}
-                      material={mats.channelMetalMat}
-                    >
-                      <boxGeometry args={[0.16, H * 0.32, 0.26]} />
-                    </mesh>
-                    <mesh
-                      position={[side * (W / 2 - 0.64), H * 0.6, 0]}
-                      rotation={[0, 0, side * 0.36]}
-                      material={mats.secondaryEmitterMat}
-                    >
-                      <boxGeometry args={[0.045, H * 0.29, 0.085]} />
-                    </mesh>
-                    {/* Upper Sweeping Haunch Connecting Toward Ceiling Coves */}
-                    <mesh
-                      position={[side * (W / 2 - 1.25), H - 0.75, 0]}
-                      rotation={[0, 0, side * 0.88]}
-                      material={mats.channelMetalMat}
-                    >
-                      <boxGeometry args={[0.16, 1.85, 0.24]} />
-                    </mesh>
-                    <mesh
-                      position={[side * (W / 2 - 1.3), H - 0.82, 0]}
-                      rotation={[0, 0, side * 0.88]}
+                  <group>
+                    <ArchitecturalChannelBar
+                      start={[side * (W / 2 - 0.3), H * 0.05, bz]}
+                      end={[side * (W / 2 - 0.3), H * 0.44, bz]}
+                      thickness={0.11}
+                      depth={0.09}
                       material={mats.primaryEmitterMat}
-                    >
-                      <boxGeometry args={[0.04, 1.72, 0.08]} />
-                    </mesh>
+                      housingMaterial={mats.channelMetalMat}
+                      interiorFocusY={H * 0.42}
+                    />
+                    <ArchitecturalChannelBar
+                      start={[side * (W / 2 - 0.3), H * 0.44, bz]}
+                      end={[side * (W / 2 - 0.66), H * 0.74, bz]}
+                      thickness={0.1}
+                      depth={0.085}
+                      material={mats.secondaryEmitterMat}
+                      housingMaterial={mats.channelMetalMat}
+                      interiorFocusY={H * 0.42}
+                    />
+                    <ArchitecturalChannelBar
+                      start={[side * (W / 2 - 0.66), H * 0.74, bz]}
+                      end={[side * (W / 2 - 1.65), H - 0.25, bz]}
+                      thickness={0.095}
+                      depth={0.08}
+                      material={mats.primaryEmitterMat}
+                      housingMaterial={mats.channelMetalMat}
+                      interiorFocusY={H * 0.42}
+                    />
                   </group>
                 )}
 
@@ -424,8 +454,8 @@ export const SideWallLighting: React.FC<SideWallLightingProps> = ({
                       <mesh material={mats.channelMetalMat}>
                         <boxGeometry args={[0.15, 1.45, 0.22]} />
                       </mesh>
-                      <mesh position={[inDir * 0.065, 0, 0.04]} material={mats.primaryEmitterMat}>
-                        <boxGeometry args={[0.04, 1.32, 0.06]} />
+                      <mesh position={[inDir * 0.078, 0, 0.04]} material={mats.primaryEmitterMat}>
+                        <boxGeometry args={[0.04, 1.32, 0.065]} />
                       </mesh>
                     </group>
                     {/* Lower Counter-Swept Blade Wing forming V-Chevron */}
@@ -433,8 +463,8 @@ export const SideWallLighting: React.FC<SideWallLightingProps> = ({
                       <mesh material={mats.channelMetalMat}>
                         <boxGeometry args={[0.15, 1.45, 0.22]} />
                       </mesh>
-                      <mesh position={[inDir * 0.065, 0, -0.04]} material={mats.secondaryEmitterMat}>
-                        <boxGeometry args={[0.04, 1.32, 0.06]} />
+                      <mesh position={[inDir * 0.078, 0, -0.04]} material={mats.secondaryEmitterMat}>
+                        <boxGeometry args={[0.04, 1.32, 0.065]} />
                       </mesh>
                     </group>
                     {/* Center Machined Pivot Hub */}
@@ -501,25 +531,28 @@ export const SideWallLighting: React.FC<SideWallLightingProps> = ({
                     <mesh material={mats.channelMetalMat}>
                       <boxGeometry args={[0.08, H * 0.72, 0.78]} />
                     </mesh>
-                    {/* Hidden Indirect Rear-Facing Knife-Edge Champagne Strips */}
-                    {[-0.2, 0.2].map((gz, gi) => (
+                    {/* Grazing Reflector Cavity + Knife-Edge Champagne Wash Strips */}
+                    <mesh position={[inDir * 0.046, 0, 0]} material={mats.secondaryEmitterMat}>
+                      <boxGeometry args={[0.022, H * 0.66, 0.64]} />
+                    </mesh>
+                    {[-0.36, 0.36].map((gz, gi) => (
                       <mesh
                         key={`graze-${gi}`}
-                        position={[inDir * 0.03, 0, gz]}
+                        position={[inDir * 0.055, 0, gz]}
                         material={mats.primaryEmitterMat}
                       >
-                        <boxGeometry args={[0.025, H * 0.66, 0.08]} />
+                        <boxGeometry args={[0.032, H * 0.68, 0.038]} />
                       </mesh>
                     ))}
-                    {/* 5 Vertical Dark Acoustic Privacy Louvers Blocking Direct Bulb Glare */}
-                    {[-0.3, -0.15, 0, 0.15, 0.3].map((lz, li) => (
+                    {/* 5 Vertical Dark Acoustic Privacy Louvers Grazing Against Indirect Glow */}
+                    {[-0.28, -0.14, 0, 0.14, 0.28].map((lz, li) => (
                       <mesh
                         key={`louver-${li}`}
-                        position={[inDir * 0.075, 0, lz]}
+                        position={[inDir * 0.095, 0, lz]}
                         rotation={[0, inDir * 0.35, 0]}
                         material={acousticPanelMat}
                       >
-                        <boxGeometry args={[0.09, H * 0.7, 0.04]} />
+                        <boxGeometry args={[0.085, H * 0.7, 0.038]} />
                       </mesh>
                     ))}
                   </group>
@@ -539,10 +572,10 @@ export const SideWallLighting: React.FC<SideWallLightingProps> = ({
                           <boxGeometry args={[0.1, 1.9, 0.16]} />
                         </mesh>
                         <mesh
-                          position={[inDir * 0.045, 0, 0]}
+                          position={[inDir * 0.056, 0, 0]}
                           material={oi === 0 ? mats.primaryEmitterMat : mats.secondaryEmitterMat}
                         >
-                          <boxGeometry args={[0.035, 1.78, 0.06]} />
+                          <boxGeometry args={[0.036, 1.78, 0.065]} />
                         </mesh>
                       </group>
                     ))}
@@ -641,12 +674,12 @@ export const SideWallLighting: React.FC<SideWallLightingProps> = ({
                       <boxGeometry args={[0.08, 2.35, 0.56]} />
                     </mesh>
                     {/* Concealed Warm Rose-Amber Indirect Spine */}
-                    <mesh position={[inDir * 0.04, 0, 0]} material={mats.primaryEmitterMat}>
-                      <boxGeometry args={[0.03, 2.18, 0.14]} />
+                    <mesh position={[inDir * 0.048, 0, 0]} material={mats.primaryEmitterMat}>
+                      <boxGeometry args={[0.036, 2.18, 0.2]} />
                     </mesh>
                     {/* 6 Precision Angled Brass Chevron Louver Blades */}
                     {[-0.85, -0.51, -0.17, 0.17, 0.51, 0.85].map((ly, li) => (
-                      <group key={`her-${li}`} position={[inDir * 0.085, ly, 0]}>
+                      <group key={`her-${li}`} position={[inDir * 0.088, ly, 0]}>
                         <mesh rotation={[0.38, 0, 0]} position={[0, 0, 0.12]} material={mats.brassHardwareMat}>
                           <boxGeometry args={[0.05, 0.04, 0.28]} />
                         </mesh>
@@ -677,15 +710,15 @@ export const SideWallLighting: React.FC<SideWallLightingProps> = ({
                     <boxGeometry args={[0.16, 0.18, shelfLen]} />
                   </mesh>
                   {/* Angled Glare Shield Hood */}
-                  <mesh position={[inDir * 0.09, 0.06, 0]} material={mats.brassHardwareMat}>
+                  <mesh position={[inDir * 0.1, 0.06, 0]} material={mats.brassHardwareMat}>
                     <boxGeometry args={[0.06, 0.05, shelfLen]} />
                   </mesh>
-                  {/* Recessed Indirect Diffuser Strip */}
+                  {/* Exposed Indirect Diffuser Strip beneath Bronze Shield */}
                   <mesh
-                    position={[inDir * 0.055, -0.02, 0]}
+                    position={[inDir * 0.09, -0.025, 0]}
                     material={si === 1 ? mats.secondaryEmitterMat : mats.primaryEmitterMat}
                   >
-                    <boxGeometry args={[0.045, 0.06, shelfLen - 0.2]} />
+                    <boxGeometry args={[0.045, 0.065, shelfLen - 0.2]} />
                   </mesh>
                 </group>
               ))}

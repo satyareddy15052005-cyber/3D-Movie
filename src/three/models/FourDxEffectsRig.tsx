@@ -87,7 +87,7 @@ export const FourDxEffectsRig: React.FC<FourDxEffectsRigProps> = ({
 
   useFrame(({ clock }, delta) => {
     const dt = Math.min(delta, 0.05);
-    const active = enabled && isPlaying && intensity > 0.02;
+    const active = Boolean(config.supports4dxEffects) && enabled && isPlaying && intensity > 0.02;
 
     if (!active) {
       windMat.opacity = THREE.MathUtils.lerp(windMat.opacity, 0, 0.15);

@@ -931,11 +931,11 @@ export const AuditoriumShell: React.FC<AuditoriumShellProps> = ({
         <group>
           {starPoints.map(([sx, sz], si) => (
             <mesh key={`star-${si}`} position={[sx, H - 0.22, sz]} rotation={[Math.PI / 2, 0, 0]}>
-              <circleGeometry args={[0.045, 8]} />
+              <circleGeometry args={[0.065, 10]} />
               <meshStandardMaterial
                 color="#090a0e"
                 emissive={si % 3 === 0 ? lightingProfile.accentColor : lightingProfile.ceilingColor}
-                emissiveIntensity={ceilingPuckIntensity * 1.15}
+                emissiveIntensity={ceilingPuckIntensity * 1.2}
               />
             </mesh>
           ))}
@@ -943,15 +943,15 @@ export const AuditoriumShell: React.FC<AuditoriumShellProps> = ({
       )}
 
       {ceilingLightStyle === 'perimeter_halo' && (
-        <group position={[0, H - 0.26, 0]}>
-          {/* Floating Acoustic Cloud Panel */}
+        <group position={[0, H - 0.36, 0]}>
+          {/* Suspended Floating Acoustic Cloud Panel */}
           <mesh material={materials.wallMat}>
-            <boxGeometry args={[W - 2.6, 0.14, L - 3.8]} />
+            <boxGeometry args={[W - 2.8, 0.1, L - 4.0]} />
           </mesh>
-          {/* Glowing 4-Sided Perimeter Halo Strips */}
+          {/* Glowing 4-Sided Indirect Perimeter Halo Cove Strips */}
           {[-1, 1].map((side) => (
-            <mesh key={`halo-x-${side}`} position={[side * ((W - 2.6) / 2 + 0.06), 0.04, 0]}>
-              <boxGeometry args={[0.08, 0.06, L - 3.6]} />
+            <mesh key={`halo-x-${side}`} position={[side * ((W - 2.8) / 2 + 0.07), 0.055, 0]}>
+              <boxGeometry args={[0.1, 0.05, L - 3.7]} />
               <meshStandardMaterial
                 color="#101218"
                 emissive={lightingProfile.accentColor}
@@ -960,8 +960,8 @@ export const AuditoriumShell: React.FC<AuditoriumShellProps> = ({
             </mesh>
           ))}
           {[-1, 1].map((end) => (
-            <mesh key={`halo-z-${end}`} position={[0, 0.04, end * ((L - 3.8) / 2 + 0.06)]}>
-              <boxGeometry args={[W - 2.4, 0.06, 0.08]} />
+            <mesh key={`halo-z-${end}`} position={[0, 0.055, end * ((L - 4.0) / 2 + 0.07)]}>
+              <boxGeometry args={[W - 2.5, 0.05, 0.1]} />
               <meshStandardMaterial
                 color="#101218"
                 emissive={lightingProfile.ceilingColor}

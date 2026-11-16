@@ -268,14 +268,16 @@ export const CinemaAuditoriumCanvas: React.FC<CinemaAuditoriumCanvasProps> = Rea
           screenReflectionBrightness={screenReflectionBrightness}
         />
 
-        <FourDxEffectsRig
-          config={config}
-          enabled={fourDxSettings.enabled}
-          isPlaying={isActivelyPlaying}
-          intensity={fourDxSettings.vibrationIntensity}
-          atmosphericLightEnabled={fourDxSettings.atmosphericLightEnabled}
-          fourDxFlashRef={fourDxFlashRef}
-        />
+        {config.supports4dxEffects && (
+          <FourDxEffectsRig
+            config={config}
+            enabled={fourDxSettings.enabled}
+            isPlaying={isActivelyPlaying}
+            intensity={fourDxSettings.vibrationIntensity}
+            atmosphericLightEnabled={fourDxSettings.atmosphericLightEnabled}
+            fourDxFlashRef={fourDxFlashRef}
+          />
+        )}
 
         <FirstPersonCameraRig
           config={config}
