@@ -203,17 +203,25 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
     screenCurvature,
     screenPosition,
     theaterName,
+    auditoriumWidth,
     auditoriumLength,
     auditoriumHeight,
     seatingRows,
     rowElevationStep,
     lightingProfile,
+    supportsScreenX,
+    screenXWingLength,
   } = config;
 
   const surfaceMeshRef = useRef<THREE.Mesh>(null);
+  const leftWingSurfaceRef = useRef<THREE.Mesh>(null);
+  const rightWingSurfaceRef = useRef<THREE.Mesh>(null);
   const shaderMatRef = useRef<THREE.ShaderMaterial | null>(null);
+  const leftWingMatRef = useRef<THREE.ShaderMaterial | null>(null);
+  const rightWingMatRef = useRef<THREE.ShaderMaterial | null>(null);
   const outerBeamMatRef = useRef<THREE.ShaderMaterial | null>(null);
   const innerBeamMatRef = useRef<THREE.ShaderMaterial | null>(null);
+  const wingBeamMatRef = useRef<THREE.ShaderMaterial | null>(null);
   const lensFlareMatRef = useRef<THREE.ShaderMaterial | null>(null);
 
   const texARef = useRef<THREE.VideoTexture | null>(null);
@@ -663,6 +671,153 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
     };
   }, [screenShaderMaterial]);
 
+  // ScreenX 270-degree Left & Right Wall Panoramic Wings + Cross-Throw Auxiliary Beams
+  const wingLen = supportsScreenX ? (screenXWingLength ?? Math.min(16.0, auditoriumLength * 0.52)) : 0;
+  const wingStartZ = Math.max(-auditoriumLength / 2 + 0.52, screenPosition[2] - 0.15);
+  const wingCenterZ = wingStartZ + wingLen / 2;
+  const wingWallX = auditoriumWidth / 2 - 0.25;
+
+  const wingMaterials = useMemo(() => {
+    if (!supportsScreenX) return null;
+    const makeWingMat = (side: -1 | 1) =>
+      new THREE.ShaderMaterial({
+        uniforms: {
+          uMap: { value: standbyTexture },
+          uBrightness: { value: 0.34 },
+          uRepeat: { value: new THREE.Vector2(1, 1) },
+          uOffset: { value: new THREE.Vector2(0, 0) },
+          uIsVideo: { value: 0 },
+          uSide: { value: side },
+          uTint: { value: new THREE.Color(lightingProfile.accentColor) },
+        },
+        vertexShader: `
+          varying vec2 vUv;
+          void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+          }
+        `,
+        fragmentShader: `
+          varying vec2 vUv;
+          uniform sampler2D uMap;
+          uniform float uBrightness;
+          uniform vec2 uRepeat;
+          uniform vec2 uOffset;
+          uniform float uIsVideo;
+          uniform float uSide;
+          uniform vec3 uTint;
+
+          vec3 srgbToLinear(vec3 c) {
+            vec3 lo = c / 12.92;
+            vec3 hi = pow((c + 0.055) / 1.055, vec3(2.4));
+            return mix(lo, hi, step(vec3(0.04045), c));
+          }
+
+          void main() {
+            // Left wing (-1): vUv.x=1 is front corner -> seam at u=0; vUv.x=0 is rear -> expands outward to 0.26
+            // Right wing (+1): vUv.x=0 is front corner -> seam at u=1; vUv.x=1 is rear -> expands outward to 0.74
+            float seamDist = uSide < 0.0 ? (1.0 - vUv.x) : vUv.x;
+            float baseU = uSide < 0.0 ? seamDist * 0.26 : 1.0 - seamDist * 0.26;
+            vec2 panUv = vec2(clamp(baseU, 0.004, 0.996), vUv.y);
+            vec2 mappedUv = panUv * uRepeat + uOffset;
+
+            vec4 tex = texture2D(uMap, mappedUv);
+            vec3 linearRgb = uIsVideo > 0.5 ? srgbToLinear(tex.rgb) : tex.rgb;
+
+            // Gentle peripheral rear vignette + matte acoustic wall calibration (0.78x of main screen gain)
+            float rearFade = 1.0 - smoothstep(0.76, 1.0, seamDist) * 0.42;
+            float vertFalloff = 1.0 - abs(vUv.y - 0.5) * 0.14;
+            float standbyTone = uIsVideo > 0.5 ? 0.78 : 0.62;
+            vec3 col = linearRgb * uBrightness * standbyTone * rearFade * vertFalloff;
+            if (uIsVideo < 0.5) {
+              col += uTint * (0.012 * (1.0 - seamDist * 0.6));
+            }
+            gl_FragColor = vec4(col, 1.0);
+            #include <colorspace_fragment>
+          }
+        `,
+        toneMapped: false,
+      });
+
+    const leftMat = makeWingMat(-1);
+    const rightMat = makeWingMat(1);
+    leftWingMatRef.current = leftMat;
+    rightWingMatRef.current = rightMat;
+    return { leftMat, rightMat };
+  }, [supportsScreenX, standbyTexture, lightingProfile.accentColor]);
+
+  const wingBeamData = useMemo(() => {
+    if (!supportsScreenX || wingLen <= 0.1) return null;
+    const projY = auditoriumHeight - 0.62;
+    const projXOffset = Math.min(2.1, auditoriumWidth * 0.12);
+    const screenH = screenHeight * scaleY;
+    const buildSideFrustum = (targetSide: -1 | 1) => {
+      // Cross-throw projector sits on opposite side of centerline aiming toward target wall wing
+      const lx = -targetSide * projXOffset;
+      const lz = wingCenterZ + 0.8;
+      const wx = targetSide * wingWallX;
+      const geom = new THREE.BufferGeometry();
+      const hw = wingLen * 0.48;
+      const hh = screenH * 0.48;
+      const sy = screenPosition[1];
+      // 4 corners on target wall: TL, TR, BR, BL relative to interior view
+      const corners: [number, number, number][] = [
+        [wx, sy + hh, wingCenterZ - hw],
+        [wx, sy + hh, wingCenterZ + hw],
+        [wx, sy - hh, wingCenterZ + hw],
+        [wx, sy - hh, wingCenterZ - hw],
+      ];
+      const positions: number[] = [];
+      const uvs: number[] = [];
+      const beamTs: number[] = [];
+      const indices: number[] = [];
+      for (let s = 0; s < 4; s++) {
+        const c0 = corners[s];
+        const c1 = corners[(s + 1) % 4];
+        const base = positions.length / 3;
+        positions.push(lx, projY, lz);
+        uvs.push(targetSide < 0 ? 0.15 : 0.85, 0.5);
+        beamTs.push(0);
+        positions.push(c0[0], c0[1], c0[2]);
+        uvs.push(targetSide < 0 ? 0.15 : 0.85, s < 2 ? 0.85 : 0.15);
+        beamTs.push(1);
+        positions.push(c1[0], c1[1], c1[2]);
+        uvs.push(targetSide < 0 ? 0.25 : 0.75, s === 1 || s === 2 ? 0.15 : 0.85);
+        beamTs.push(1);
+        indices.push(base, base + 1, base + 2);
+      }
+      geom.setIndex(indices);
+      geom.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+      geom.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+      geom.setAttribute('aBeamT', new THREE.Float32BufferAttribute(beamTs, 1));
+      geom.computeVertexNormals();
+      return geom;
+    };
+    const leftBeamGeo = buildSideFrustum(-1);
+    const rightBeamGeo = buildSideFrustum(1);
+    const mat = createBeamMaterial(1.65);
+    wingBeamMatRef.current = mat;
+    return { leftBeamGeo, rightBeamGeo, mat };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supportsScreenX, wingLen, wingCenterZ, wingWallX, auditoriumHeight, auditoriumWidth, screenHeight, scaleY, screenPosition, gpuLightSampler]);
+
+  useEffect(() => {
+    return () => {
+      if (wingMaterials) {
+        wingMaterials.leftMat.dispose();
+        wingMaterials.rightMat.dispose();
+        leftWingMatRef.current = null;
+        rightWingMatRef.current = null;
+      }
+      if (wingBeamData) {
+        wingBeamData.leftBeamGeo.dispose();
+        wingBeamData.rightBeamGeo.dispose();
+        wingBeamData.mat.dispose();
+        wingBeamMatRef.current = null;
+      }
+    };
+  }, [wingMaterials, wingBeamData]);
+
   useFrame(({ gl }, delta) => {
     const dt = Math.min(delta, 0.25);
     const targetBrightness =
@@ -838,10 +993,27 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
       );
     }
 
+    // Sync live 270° ScreenX left & right panoramic wall wings to active deck frame
+    [leftWingMatRef.current, rightWingMatRef.current].forEach((wingMat) => {
+      if (!wingMat) return;
+      wingMat.uniforms.uMap.value = activeTex;
+      wingMat.uniforms.uBrightness.value = screenBrightnessRef.current;
+      wingMat.uniforms.uIsVideo.value = isVideo ? 1.0 : 0.0;
+      wingMat.uniforms.uRepeat.value.set(
+        isVideo ? uvRepeatX : 1,
+        isVideo ? uvRepeatY : 1,
+      );
+      wingMat.uniforms.uOffset.value.set(
+        isVideo ? uvOffsetX : 0,
+        isVideo ? uvOffsetY : 0,
+      );
+    });
+
     // Calibrated volumetric projector beam: clearly visible and cinematic on desktop, restrained on mobile
     const beamActive = showState === 'SHOW_PLAYING' && isVideo;
     const outerTarget = beamActive ? (isPaused ? 0.045 : isMobile ? 0.075 : 0.185) : 0.0;
     const innerTarget = beamActive ? (isPaused ? 0.03 : isMobile ? 0.052 : 0.135) : 0.0;
+    const wingBeamTarget = beamActive ? (isPaused ? 0.02 : isMobile ? 0.035 : 0.085) : 0.0;
     const flareTarget = beamActive ? (isPaused ? 0.16 : isMobile ? 0.24 : 0.48) : 0.04;
 
     if (outerBeamMatRef.current) {
@@ -862,6 +1034,15 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
         dt,
       );
     }
+    if (wingBeamMatRef.current) {
+      wingBeamMatRef.current.uniforms.uScreenLightTex.value = gpuLightSampler.rt.texture;
+      wingBeamMatRef.current.uniforms.uOpacity.value = THREE.MathUtils.damp(
+        wingBeamMatRef.current.uniforms.uOpacity.value,
+        wingBeamTarget,
+        3.2,
+        dt,
+      );
+    }
     if (lensFlareMatRef.current) {
       lensFlareMatRef.current.uniforms.uScreenLightTex.value = gpuLightSampler.rt.texture;
       lensFlareMatRef.current.uniforms.uOpacity.value = THREE.MathUtils.damp(
@@ -878,6 +1059,12 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
         isVideo ? scaleY : 1,
         1,
       );
+    }
+    if (leftWingSurfaceRef.current) {
+      leftWingSurfaceRef.current.scale.set(1, isVideo ? scaleY : 1, 1);
+    }
+    if (rightWingSurfaceRef.current) {
+      rightWingSurfaceRef.current.scale.set(1, isVideo ? scaleY : 1, 1);
     }
   });
 
@@ -920,6 +1107,70 @@ export const CinemaScreen: React.FC<CinemaScreenProps> = ({
           />
         </mesh>
       </group>
+
+      {/* ScreenX 270° Left & Right Side-Wall Projection Canvases + Matte Acoustic Masking */}
+      {supportsScreenX && wingMaterials && wingLen > 0.1 && (
+        <group>
+          {([-1, 1] as const).map((side) => {
+            const wallX = side * wingWallX;
+            const rotY = side < 0 ? Math.PI / 2 : -Math.PI / 2;
+            const inwardOffset = -side * 0.02;
+            return (
+              <group key={`screenx-wing-${side}`}>
+                {/* Anodized Matte Perimeter Frame & Acoustic Masking Backing */}
+                <mesh
+                  position={[wallX + side * 0.01, screenPosition[1], wingCenterZ]}
+                  rotation={[0, rotY, 0]}
+                >
+                  <planeGeometry args={[wingLen + 0.32, screenHeight + 0.34]} />
+                  <meshStandardMaterial color="#050608" roughness={0.94} metalness={0.08} />
+                </mesh>
+
+                {/* Active Side-Wall Panoramic ScreenX Surface */}
+                <mesh
+                  ref={side < 0 ? leftWingSurfaceRef : rightWingSurfaceRef}
+                  position={[wallX + inwardOffset, screenPosition[1], wingCenterZ]}
+                  rotation={[0, rotY, 0]}
+                  material={side < 0 ? wingMaterials.leftMat : wingMaterials.rightMat}
+                >
+                  <planeGeometry args={[wingLen, screenHeight]} />
+                </mesh>
+
+                {/* Sleek Top & Bottom Anodized Alignment Rails Framing the Side Wing */}
+                {[-1, 1].map((vSign) => (
+                  <mesh
+                    key={`wing-rail-${side}-${vSign}`}
+                    position={[
+                      wallX + inwardOffset * 1.1,
+                      screenPosition[1] + vSign * (screenHeight / 2 + 0.08),
+                      wingCenterZ,
+                    ]}
+                  >
+                    <boxGeometry args={[0.04, 0.11, wingLen + 0.32]} />
+                    <meshStandardMaterial color="#0e1118" roughness={0.35} metalness={0.78} />
+                  </mesh>
+                ))}
+              </group>
+            );
+          })}
+        </group>
+      )}
+
+      {/* ScreenX Dual Cross-Throw Ceiling Volumetric Beams */}
+      {supportsScreenX && wingBeamData && (
+        <group>
+          <mesh
+            geometry={wingBeamData.leftBeamGeo}
+            material={wingBeamData.mat}
+            renderOrder={4}
+          />
+          <mesh
+            geometry={wingBeamData.rightBeamGeo}
+            material={wingBeamData.mat}
+            renderOrder={4}
+          />
+        </group>
+      )}
 
       {/* Real-Time Video-Matched Volumetric Projector Frustum Beam (Booth -> Screen) */}
       <mesh geometry={outerBeamGeo} material={outerBeamMaterial} renderOrder={4} />

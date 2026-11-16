@@ -29,6 +29,7 @@ export const HomePage: React.FC<HomePageProps> = ({ aboutSectionRef }) => {
     imax: 'imax',
     '4dx': '4dx',
     dolby: 'dolby',
+    screenx: 'screenx',
     private_luxury: 'private_luxury',
   });
 
@@ -81,7 +82,7 @@ export const HomePage: React.FC<HomePageProps> = ({ aboutSectionRef }) => {
         </div>
       </section>
 
-      {/* Five Theater Categories × Three Ambiences Exploration Section */}
+      {/* Six Theater Categories × Three Ambiences Exploration Section */}
       <section
         ref={theatersSectionRef}
         id="explore-theaters"

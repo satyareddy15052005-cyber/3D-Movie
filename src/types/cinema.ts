@@ -3,6 +3,7 @@ export type TheaterCategoryId =
   | 'imax'
   | '4dx'
   | 'dolby'
+  | 'screenx'
   | 'private_luxury';
 
 export type TheaterId =
@@ -18,6 +19,9 @@ export type TheaterId =
   | 'dolby'
   | 'dolby_cobalt'
   | 'dolby_bordeaux'
+  | 'screenx'
+  | 'screenx_cobalt'
+  | 'screenx_gold'
   | 'private_luxury'
   | 'private_champagne'
   | 'private_midnight';
@@ -44,6 +48,9 @@ export type SideLightStyle =
   | 'obsidian_slat_grazers'
   | 'diagonal_parabolic_ribs'
   | 'tiered_cantilever_shelves'
+  | 'panoramic_perimeter_trim'
+  | 'winged_arch_frames'
+  | 'beveled_gold_coves'
   | 'walnut_alabaster_lanterns'
   | 'floating_halo_alcoves'
   | 'chevron_louver_columns';
@@ -88,7 +95,7 @@ export interface EnvironmentProfile {
   seatTrimColor: string;
   curtainColor?: string;
   seatMaterialType: 'fabric' | 'leather' | 'sport_leather';
-  architectureStyle: 'classic' | 'imax' | '4dx' | 'dolby' | 'private';
+  architectureStyle: 'classic' | 'imax' | '4dx' | 'dolby' | 'screenx' | 'private';
 }
 
 export interface TheaterCategoryInfo {
@@ -143,6 +150,8 @@ export interface TheaterConfiguration {
   lightingStyleText: string;
   features: string[];
   supports4dxEffects?: boolean;
+  supportsScreenX?: boolean;
+  screenXWingLength?: number;
 }
 
 export interface SeatData {

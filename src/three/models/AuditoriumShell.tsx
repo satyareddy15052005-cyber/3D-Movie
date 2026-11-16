@@ -65,7 +65,14 @@ export const AuditoriumShell: React.FC<AuditoriumShellProps> = ({
     sideLightStyle,
     ceilingLightStyle,
     wallBayCount,
+    supportsScreenX,
+    screenXWingLength,
   } = config;
+
+  const isScreenX = Boolean(supportsScreenX);
+  const wingLen = isScreenX ? (screenXWingLength ?? Math.min(16.0, L * 0.52)) : 0;
+  const wingStartZ = Math.max(-L / 2 + 0.52, screenPosition[2] - 0.15);
+  const wingCenterZ = wingStartZ + wingLen / 2;
 
   const textures = useMemo(
     () =>
@@ -485,16 +492,17 @@ export const AuditoriumShell: React.FC<AuditoriumShellProps> = ({
         <boxGeometry args={[W, H, 0.4]} />
       </mesh>
 
-      {/* Sculpted 3D Pleated Velvet Side Curtains Flanking the Giant Screen */}
-      {[-1, 1].map((side) => (
-        <mesh
-          key={`wing-${side}`}
-          position={[side * (W / 2 - wingWidth / 2 - 0.18), H / 2, frontZ + 0.48]}
-          geometry={curtainGeos.sideCurtainGeo}
-          material={materials.curtainMat}
-          receiveShadow
-        />
-      ))}
+      {/* Sculpted 3D Pleated Velvet Side Curtains Flanking the Giant Screen (omitted in ScreenX so 270° corners meet cleanly) */}
+      {!isScreenX &&
+        [-1, 1].map((side) => (
+          <mesh
+            key={`wing-${side}`}
+            position={[side * (W / 2 - wingWidth / 2 - 0.18), H / 2, frontZ + 0.48]}
+            geometry={curtainGeos.sideCurtainGeo}
+            material={materials.curtainMat}
+            receiveShadow
+          />
+        ))}
 
       {/* Overhead Pleated Velvet Valance Header above Screen */}
       {valanceHeight > 0.35 && (
@@ -823,13 +831,13 @@ export const AuditoriumShell: React.FC<AuditoriumShellProps> = ({
       {[-1, 1].map((side) => (
         <group
           key={`exit-${side}`}
-          position={[side * (W / 2 - 0.24), 1.18, frontZ + 2.4]}
+          position={[side * (W / 2 - 0.24), isScreenX ? 1.08 : 1.18, frontZ + 2.4]}
           rotation={[0, (side * -Math.PI) / 2, 0]}
         >
           <mesh material={materials.doorMat}>
-            <boxGeometry args={[1.15, 2.35, 0.1]} />
+            <boxGeometry args={[1.15, isScreenX ? 2.16 : 2.35, 0.1]} />
           </mesh>
-          <mesh position={[0, 1.42, 0.04]} material={materials.exitSignMat}>
+          <mesh position={[0, isScreenX ? 1.2 : 1.42, 0.04]} material={materials.exitSignMat}>
             <planeGeometry args={[0.52, 0.2]} />
           </mesh>
           <mesh position={[side * 0.85, -0.35, 0.08]} material={materials.extinguisherMat}>
@@ -989,6 +997,52 @@ export const AuditoriumShell: React.FC<AuditoriumShellProps> = ({
             </mesh>
           </group>
         ))}
+
+      {/* ScreenX Dual Overhead Auxiliary Cross-Throw Laser Projectors */}
+      {isScreenX &&
+        ([-1, 1] as const).map((side) => {
+          // Projector at +X throws across to -X left wing; projector at -X throws across to +X right wing
+          const px = side * Math.min(2.1, W * 0.12);
+          const py = H - 0.62;
+          const pz = wingCenterZ + 0.8;
+          return (
+            <group
+              key={`screenx-aux-proj-${side}`}
+              position={[px, py, pz]}
+              rotation={[0, side > 0 ? Math.PI / 2 : -Math.PI / 2, -0.22]}
+            >
+              {/* Overhead Unistrut Suspension Mast */}
+              <mesh position={[0, 0.26, 0]} material={materials.projectorChromeMat}>
+                <cylinderGeometry args={[0.045, 0.045, 0.52, 12]} />
+              </mesh>
+              {/* Auxiliary Laser Projector Enclosure */}
+              <mesh material={materials.projectorBodyMat}>
+                <boxGeometry args={[0.42, 0.26, 0.54]} />
+              </mesh>
+              <mesh position={[0, 0.14, 0]} material={materials.projectorChromeMat}>
+                <boxGeometry args={[0.36, 0.04, 0.48]} />
+              </mesh>
+              {/* Short-Throw Cross-Hall Lens Barrel */}
+              <mesh
+                position={[0, -0.02, -0.3]}
+                rotation={[Math.PI / 2, 0, 0]}
+                material={materials.projectorChromeMat}
+              >
+                <cylinderGeometry args={[0.09, 0.1, 0.12, 18]} />
+              </mesh>
+              {/* Optical Laser Exit Aperture */}
+              <mesh position={[0, -0.02, -0.37]} rotation={[Math.PI / 2, 0, 0]}>
+                <cylinderGeometry args={[0.068, 0.068, 0.02, 18]} />
+                <meshStandardMaterial
+                  color="#c8e6ff"
+                  emissive={lightingProfile.accentColor}
+                  emissiveIntensity={lensEmissiveIntensity}
+                  roughness={0.08}
+                />
+              </mesh>
+            </group>
+          );
+        })}
     </group>
   );
 };

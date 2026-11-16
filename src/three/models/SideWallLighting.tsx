@@ -93,9 +93,19 @@ export const SideWallLighting: React.FC<SideWallLightingProps> = ({
     sideLightStyle,
     lightingProfile,
     environmentProfile,
+    screenPosition,
+    screenHeight,
+    supportsScreenX,
+    screenXWingLength,
   } = config;
 
   const isPrivate = environmentProfile.architectureStyle === 'private';
+  const isScreenX = Boolean(supportsScreenX);
+  const wingLen = isScreenX ? (screenXWingLength ?? Math.min(16.0, L * 0.52)) : 0;
+  const wingStartZ = Math.max(-L / 2 + 0.52, screenPosition[2] - 0.15);
+  const wingEndZ = isScreenX ? wingStartZ + wingLen + 0.35 : -L;
+  const wingBottomY = screenPosition[1] - screenHeight / 2;
+  const wingTopY = screenPosition[1] + screenHeight / 2;
 
   // Shared realistic architectural fixture materials (eliminates redundant shader compilations)
   const mats = useMemo(() => {
@@ -218,11 +228,15 @@ export const SideWallLighting: React.FC<SideWallLightingProps> = ({
 
   return (
     <group>
-      {/* Standard Acoustic Pilasters & Framed Wall Panels (skipped on crisscross & tiered strip styles for clean architectural canvas) */}
+      {/* Standard Acoustic Pilasters & Framed Wall Panels (skipped in ScreenX projection wing zone & full-wall styles) */}
       {sideLightStyle !== 'crisscross_geometric' &&
         sideLightStyle !== 'horizon_tier_strips' &&
-        wallBayZs.map((bz, idx) =>
-          [-1, 1].map((side) => (
+        wallBayZs.map((bz, idx) => {
+          if (isScreenX && bz < wingEndZ) return null;
+          const nextBz = wallBayZs[idx + 1];
+          const allowTile =
+            idx < wallBayZs.length - 1 && (!isScreenX || (bz >= wingEndZ && nextBz >= wingEndZ));
+          return [-1, 1].map((side) => (
             <group key={`wall-bay-${idx}-${side}`}>
               {/* Architectural Acoustic Pilaster */}
               <mesh
@@ -234,30 +248,30 @@ export const SideWallLighting: React.FC<SideWallLightingProps> = ({
               </mesh>
 
               {/* Framed Fabric Acoustic Wall Tile between Pilasters */}
-              {idx < wallBayZs.length - 1 && (
+              {allowTile && (
                 <group
                   position={[
                     side * (W / 2 - 0.215),
                     H * 0.52,
-                    (bz + wallBayZs[idx + 1]) / 2,
+                    (bz + nextBz) / 2,
                   ]}
                 >
                   <mesh material={acousticPanelMat} receiveShadow>
                     <boxGeometry
-                      args={[0.07, H * 0.68, Math.max(0.4, Math.abs(wallBayZs[idx + 1] - bz) - 0.56)]}
+                      args={[0.07, H * 0.68, Math.max(0.4, Math.abs(nextBz - bz) - 0.56)]}
                     />
                   </mesh>
                   {/* Beveled acoustic frame trim */}
                   <mesh position={[-side * 0.036, 0, 0]} material={mats.channelMetalMat}>
                     <boxGeometry
-                      args={[0.014, H * 0.64, Math.max(0.32, Math.abs(wallBayZs[idx + 1] - bz) - 0.68)]}
+                      args={[0.014, H * 0.64, Math.max(0.32, Math.abs(nextBz - bz) - 0.68)]}
                     />
                   </mesh>
                 </group>
               )}
             </group>
-          )),
-        )}
+          ));
+        })}
 
       {/* Flush Matte Acoustic Bays + Crisscross Continuous Geometric LED Channels */}
       {sideLightStyle === 'crisscross_geometric' && (
@@ -308,12 +322,13 @@ export const SideWallLighting: React.FC<SideWallLightingProps> = ({
       )}
 
       {/* ===================================================================== */}
-      {/* BAY-MOUNTED BESPOKE ARCHITECTURAL SIDE LIGHT DESIGNS (14 MORE STYLES) */}
+      {/* BAY-MOUNTED BESPOKE ARCHITECTURAL SIDE LIGHT DESIGNS (16 MORE STYLES) */}
       {/* ===================================================================== */}
       {sideLightStyle !== 'crisscross_geometric' &&
         sideLightStyle !== 'horizon_tier_strips' &&
-        wallBayZs.map((bz, idx) =>
-          [-1, 1].map((side) => {
+        wallBayZs.map((bz, idx) => {
+          if (isScreenX && bz < wingEndZ) return null;
+          return [-1, 1].map((side) => {
             const xBase = side * (wallInnerX - 0.08);
             const inDir = -side; // points inward into the auditorium
 
@@ -690,10 +705,134 @@ export const SideWallLighting: React.FC<SideWallLightingProps> = ({
                     ))}
                   </group>
                 )}
+
+                {/* 16. ScreenX Premiere 270 — Aft Cybernetic Blade Sconce (Aft of Wing Zone) */}
+                {sideLightStyle === 'panoramic_perimeter_trim' && (
+                  <group position={[xBase, sconceY + 0.1, bz]}>
+                    <mesh material={mats.channelMetalMat}>
+                      <boxGeometry args={[0.1, 2.35, 0.42]} />
+                    </mesh>
+                    <mesh position={[inDir * 0.056, 0, 0]} material={mats.primaryEmitterMat}>
+                      <boxGeometry args={[0.036, 2.15, 0.07]} />
+                    </mesh>
+                    {[-0.65, 0.65].map((by, bi) => (
+                      <mesh key={`sx-fin-${bi}`} position={[inDir * 0.068, by, 0]} material={trimMetalMat}>
+                        <boxGeometry args={[0.05, 0.06, 0.36]} />
+                      </mesh>
+                    ))}
+                  </group>
+                )}
+
+                {/* 17. ScreenX Panoramic Ultra — Sculpted Cobalt Winged Arch Light Portal (Aft of Wing Zone) */}
+                {sideLightStyle === 'winged_arch_frames' && (
+                  <group position={[xBase, sconceY + 0.15, bz]}>
+                    <mesh material={mats.channelMetalMat}>
+                      <boxGeometry args={[0.12, 2.65, 0.72]} />
+                    </mesh>
+                    {[-0.24, 0.24].map((az, ai) => (
+                      <group key={`sx-arch-${ai}`} position={[inDir * 0.065, 0, az]}>
+                        <mesh material={mats.primaryEmitterMat}>
+                          <boxGeometry args={[0.034, 2.45, 0.048]} />
+                        </mesh>
+                      </group>
+                    ))}
+                    <mesh position={[inDir * 0.075, 1.24, 0]} material={mats.secondaryEmitterMat}>
+                      <boxGeometry args={[0.04, 0.055, 0.56]} />
+                    </mesh>
+                    <mesh position={[inDir * 0.075, -1.24, 0]} material={mats.secondaryEmitterMat}>
+                      <boxGeometry args={[0.04, 0.055, 0.56]} />
+                    </mesh>
+                  </group>
+                )}
+
+                {/* 18. ScreenX Gold Lounge 270 — Aft Brass Coffered Wing Sconce (Aft of Wing Zone) */}
+                {sideLightStyle === 'beveled_gold_coves' && (
+                  <group position={[xBase, sconceY + 0.05, bz]}>
+                    <mesh material={mats.walnutWoodMat}>
+                      <boxGeometry args={[0.09, 2.05, 0.56]} />
+                    </mesh>
+                    <mesh position={[inDir * 0.055, 0, 0]} material={mats.brassHardwareMat}>
+                      <boxGeometry args={[0.04, 1.85, 0.36]} />
+                    </mesh>
+                    <mesh position={[inDir * 0.082, 0, 0]} material={mats.primaryEmitterMat}>
+                      <boxGeometry args={[0.025, 1.72, 0.14]} />
+                    </mesh>
+                  </group>
+                )}
               </group>
             );
-          }),
-        )}
+          });
+        })}
+
+      {/* ScreenX Continuous Perimeter Architectural Wing Framing (Zero Screen Overlap) */}
+      {isScreenX &&
+        [-1, 1].map((side) => {
+          const xWall = side * (wallInnerX - 0.04);
+          const inDir = -side;
+          const midWingZ = wingStartZ + wingLen / 2;
+          return (
+            <group key={`screenx-wing-trim-${side}`}>
+              {/* Subtle Recessed Sill Trim Below Wing Bottom Rail */}
+              <group position={[xWall, wingBottomY - 0.22, midWingZ]}>
+                <mesh material={mats.channelMetalMat}>
+                  <boxGeometry args={[0.08, 0.09, wingLen + 0.2]} />
+                </mesh>
+                <mesh
+                  position={[inDir * 0.042, -0.02, 0]}
+                  material={
+                    sideLightStyle === 'winged_arch_frames'
+                      ? mats.secondaryEmitterMat
+                      : mats.primaryEmitterMat
+                  }
+                >
+                  <boxGeometry args={[0.032, 0.035, wingLen + 0.05]} />
+                </mesh>
+              </group>
+
+              {/* Subtle Recessed Upper Crown Cove Above Wing Top Rail */}
+              {H - wingTopY > 0.38 && (
+                <group position={[xWall, wingTopY + 0.2, midWingZ]}>
+                  <mesh material={mats.channelMetalMat}>
+                    <boxGeometry args={[0.08, 0.08, wingLen + 0.2]} />
+                  </mesh>
+                  <mesh position={[inDir * 0.042, 0.02, 0]} material={mats.secondaryEmitterMat}>
+                    <boxGeometry args={[0.03, 0.03, wingLen + 0.05]} />
+                  </mesh>
+                </group>
+              )}
+
+              {/* Rear Vertical Boundary Framing Pilaster Marking End of 270° Wing */}
+              <group position={[xWall, screenPosition[1], wingEndZ - 0.14]}>
+                <mesh material={mats.channelMetalMat}>
+                  <boxGeometry args={[0.1, screenHeight + 0.4, 0.18]} />
+                </mesh>
+                <mesh
+                  position={[inDir * 0.052, 0, 0]}
+                  material={
+                    sideLightStyle === 'beveled_gold_coves'
+                      ? mats.brassHardwareMat
+                      : mats.primaryEmitterMat
+                  }
+                >
+                  <boxGeometry args={[0.035, screenHeight + 0.2, 0.05]} />
+                </mesh>
+              </group>
+
+              {/* ScreenX Gold Lower Diagonal Skirting Accent Below Door Clearances */}
+              {sideLightStyle === 'beveled_gold_coves' && (
+                <ArchitecturalChannelBar
+                  start={[side * (W / 2 - 0.28), 0.35, -L / 2 + 3.4]}
+                  end={[side * (W / 2 - 0.28), wingBottomY - 0.24, wingEndZ - 0.18]}
+                  thickness={0.042}
+                  depth={0.036}
+                  material={mats.secondaryEmitterMat}
+                  housingMaterial={mats.brassHardwareMat}
+                  interiorFocusY={2.5}
+                />
+              )}
+            </group>
+          );
+        })}
 
       {/* 6. IMAX Obsidian Amber — Continuous Triple-Tier Brushed-Bronze Horizontal Architectural Light Shelves */}
       {sideLightStyle === 'horizon_tier_strips' &&

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ArrowRight } from 'lucide-react';
 import {
   THEATER_CATEGORIES,
+  THEATER_LIST,
   getTheatersByCategory,
 } from '../../config/theaters/theaterConfigs';
 import { TheaterCategoryId } from '../../types/cinema';
@@ -36,7 +37,7 @@ export const TheaterSelectionPage: React.FC = () => {
                 : 'border-white/15 bg-[#0E0F13] text-neutral-300 hover:border-[#D4AF37]/50 hover:text-white'
             }`}
           >
-            All (15)
+            All ({THEATER_LIST.length})
           </button>
           {THEATER_CATEGORIES.map((cat) => (
             <button

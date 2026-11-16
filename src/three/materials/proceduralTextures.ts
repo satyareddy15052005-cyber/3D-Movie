@@ -700,9 +700,11 @@ export function createAuditoriumTextures(
       ? '#4b0d17'
       : env.architectureStyle === 'imax'
         ? '#0f2347'
-        : env.architectureStyle === 'private'
-          ? '#2a1d17'
-          : '#111420');
+        : env.architectureStyle === 'screenx'
+          ? '#0a0e17'
+          : env.architectureStyle === 'private'
+            ? '#2a1d17'
+            : '#111420');
   const curtainMap = createCurtainTexture(curtainBase);
   const posterMap = createPosterLightboxTexture(theaterName, accentHex);
   const entranceSignMap = createEntranceSignTexture(accentHex);

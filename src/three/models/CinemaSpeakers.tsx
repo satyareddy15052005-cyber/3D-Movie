@@ -335,16 +335,28 @@ export const CinemaSpeakers: React.FC<CinemaSpeakersProps> = ({
     };
   }, [materials]);
 
-  // Compute safe side-wall surround bay indices (avoid overlapping exit door or front wall)
+  // Compute safe side-wall surround bay indices (avoid overlapping exit door, front wall, or ScreenX side wings)
   const sideSpeakerPositions = useMemo(() => {
     const arr: { x: number; y: number; z: number; side: -1 | 1; bayIdx: number }[] = [];
     const usableBays = wallBayZs.filter((_, idx) => idx >= 1 && idx <= wallBayZs.length - 1);
+    const isScreenX = Boolean(config.supportsScreenX);
+    const wingLen = isScreenX ? (config.screenXWingLength ?? Math.min(16.0, L * 0.52)) : 0;
+    const wingStartZ = Math.max(-L / 2 + 0.52, screenPosition[2] - 0.15);
+    const wingEndZ = isScreenX ? wingStartZ + wingLen + 0.45 : -L;
+    const wingTopY = screenPosition[1] + config.screenHeight / 2;
+
     usableBays.forEach((bz, idx) => {
       const spkZ = Math.min(backZ - 1.15, bz + 0.82);
-      const spkY = Math.min(
+      let spkY = Math.min(
         H - 1.35,
         Math.max(2.35, topTierY + 2.25 - (usableBays.length - 1 - idx) * 0.16),
       );
+      if (isScreenX && spkZ <= wingEndZ) {
+        if (H - wingTopY < 1.18) {
+          return;
+        }
+        spkY = Math.min(H - 0.58, wingTopY + 0.52);
+      }
       ([-1, 1] as const).forEach((side) => {
         arr.push({
           x: side * (W / 2 - 0.22),
@@ -356,7 +368,18 @@ export const CinemaSpeakers: React.FC<CinemaSpeakersProps> = ({
       });
     });
     return arr;
-  }, [wallBayZs, backZ, H, topTierY, W]);
+  }, [
+    wallBayZs,
+    backZ,
+    H,
+    topTierY,
+    W,
+    L,
+    screenPosition,
+    config.supportsScreenX,
+    config.screenXWingLength,
+    config.screenHeight,
+  ]);
 
   // Rear-wall surround speakers: dedicated speakers directly flanking the projector booth window
   // plus corner rear surrounds in wider halls and an overhead booth-crown rear surround
